@@ -1,0 +1,124 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --bg-main: #ffffff;
+    --fg-main: #000000;
+    --border-main: #000000;
+    --muted-bg: #f4f4f4;
+    --muted-fg: #666666;
+  }
+
+  .dark {
+    --bg-main: #000000;
+    --fg-main: #ffffff;
+    --border-main: #ffffff;
+    --muted-bg: #141414;
+    --muted-fg: #888888;
+  }
+
+  body {
+    background-color: var(--bg-main);
+    color: var(--fg-main);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    margin: 0;
+    padding: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  /* Selection style */
+  ::selection {
+    background: var(--fg-main);
+    color: var(--bg-main);
+  }
+}
+
+/* Swiss typography and B&W Prose */
+.prose-bw {
+  line-height: 1.7;
+  word-break: break-word;
+}
+
+.prose-bw h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  letter-spacing: -0.02em;
+}
+
+.prose-bw h2 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.01em;
+}
+
+.prose-bw h3 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.prose-bw p {
+  margin-top: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.prose-bw ul, .prose-bw ol {
+  padding-left: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.prose-bw li {
+  margin-bottom: 0.25rem;
+}
+
+.prose-bw blockquote {
+  border-left: 3px solid currentColor;
+  padding-left: 1rem;
+  margin: 1rem 0;
+  font-style: italic;
+  opacity: 0.85;
+}
+
+.prose-bw code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
+  padding: 0.15rem 0.35rem;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+}
+
+.prose-bw pre {
+  padding: 1rem;
+  border: 1px solid currentColor;
+  overflow-x: auto;
+  margin: 1rem 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
+  line-height: 1.5;
+}
+
+.prose-bw pre code {
+  padding: 0;
+  border: none;
+}
+
+.prose-bw a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 500;
+}
+
+.prose-bw hr {
+  border: 0;
+  border-top: 1px solid currentColor;
+  margin: 1.5rem 0;
+}
