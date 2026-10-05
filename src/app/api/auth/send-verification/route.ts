@@ -33,13 +33,12 @@ export async function POST(req: NextRequest) { // Handle POST request to dispatc
     } // End dbEmailCheck
 
     // 3. Verify that username is not already taken if provided
-    if (username) { // If username was provided
-      const db = await getDb(); // Access database
-      const existingUser = await db.execute({ // Query username uniqueness
-        sql: "SELECT id FROM users WHERE username = ? LIMIT 1", // SQL query
-        args: [username.trim().toLowerCase()], // Lowercase username argument
-      }); // End execute
-      if (existingUser.rows.length > 0) { // If username already exists
+    if (username && typeof username === "string") { // If username was provided
+      const db = await getDb(); // Access MongoDB database
+      const existingUser = await db.collection("users").findOne({ // Query username uniqueness
+        username: username.trim().toLowerCase(), // Normalized username string
+      }); // End findOne
+      if (existingUser) { // If username already exists
         return NextResponse.json( // Return username error
           { error: "ชื่อผู้ใช้นี้ถูกใช้งานแล้ว กรุณาเลือกชื่ออื่น" }, // Localized message
           { status: 400 } // Bad request

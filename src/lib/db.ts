@@ -1,207 +1,166 @@
 // ==============================================================================
 // File: .//Description-of-file/db.md
-// Overview: Database client connection, schema migrations, and starter seeds.
+// Overview: MongoDB connection manager, connection caching, automated collection indexes, and initial seeds.
 // ==============================================================================
 
-import { createClient } from "@libsql/client";
-import path from "path";
+import { MongoClient, Db } from "mongodb"; // Import MongoClient and Db types from official mongodb driver
 
-// Initialize local SQLite database file in the project root
-const dbPath = path.join(process.cwd(), "kratuu.db");
-const client = createClient({
-  url: `file:${dbPath}`,
-});
+// Declare global cache variable to preserve client connection across Next.js fast reloads in development
+declare global { // Augment global scope
+  var _mongoClientPromise: Promise<MongoClient> | undefined; // Cached MongoClient promise
+} // End global declaration
 
-let isInitialized = false;
+const uri = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/kratuu"; // Read connection string from environment
+const dbName = process.env.MONGODB_DB_NAME || "kratuu"; // Read target database name
 
-export async function getDb() {
-  if (!isInitialized) {
-    await client.execute(`
-      CREATE TABLE IF NOT EXISTS threads (
-        id TEXT PRIMARY KEY,
-        user_id TEXT,
-        title TEXT NOT NULL,
-        content TEXT NOT NULL,
-        author_name TEXT NOT NULL,
-        author_pin TEXT,
-        category TEXT NOT NULL DEFAULT 'ทั่วไป',
-        tags TEXT NOT NULL DEFAULT '[]',
-        upvotes INTEGER NOT NULL DEFAULT 0,
-        downvotes INTEGER NOT NULL DEFAULT 0,
-        views INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-    `);
+let clientPromise: Promise<MongoClient>; // Declare client promise variable
 
-    await client.execute(`
-      CREATE TABLE IF NOT EXISTS comments (
-        id TEXT PRIMARY KEY,
-        thread_id TEXT NOT NULL,
-        user_id TEXT,
-        parent_id TEXT,
-        content TEXT NOT NULL,
-        author_name TEXT NOT NULL,
-        author_pin TEXT,
-        upvotes INTEGER NOT NULL DEFAULT 0,
-        downvotes INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL
-      );
-    `);
+if (process.env.NODE_ENV === "development") { // In development mode, use global caching to prevent socket leakage
+  if (!global._mongoClientPromise) { // If client promise is not yet initialized in global
+    const client = new MongoClient(uri); // Instantiate new MongoClient
+    global._mongoClientPromise = client.connect(); // Connect and cache promise globally
+  } // End if
+  clientPromise = global._mongoClientPromise; // Assign cached promise
+} else { // In production mode, instantiate dedicated client connection
+  const client = new MongoClient(uri); // Instantiate new MongoClient
+  clientPromise = client.connect(); // Connect client
+} // End if-else
 
-    // Safe column migrations for existing tables
-    try {
-      await client.execute("ALTER TABLE threads ADD COLUMN user_id TEXT;");
-    } catch {}
-    try {
-      await client.execute("ALTER TABLE comments ADD COLUMN user_id TEXT;");
-    } catch {}
-    try {
-      await client.execute("ALTER TABLE users ADD COLUMN google_id TEXT;");
-    } catch {}
-    try {
-      await client.execute("ALTER TABLE users ADD COLUMN email TEXT;");
-    } catch {}
+let isInitialized = false; // Flag tracking if indexes and seed data have been initialized
 
-    await client.execute(`
-      CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        username TEXT UNIQUE NOT NULL,
-        display_name TEXT NOT NULL,
-        email TEXT,
-        google_id TEXT,
-        password_hash TEXT,
-        salt TEXT,
-        role TEXT NOT NULL DEFAULT 'user',
-        created_at INTEGER NOT NULL
-      );
-    `);
+async function ensureDatabaseInitialized(db: Db): Promise<void> { // Creates indexes and default sample data
+  try { // Begin initialization try block
+    // 1. Threads collection indexes
+    await db.collection("threads").createIndex({ id: 1 }, { unique: true }); // Unique thread ID index
+    await db.collection("threads").createIndex({ created_at: -1 }); // Chronological sorting index
+    await db.collection("threads").createIndex({ category: 1 }); // Category filtering index
+    await db.collection("threads").createIndex({ tags: 1 }); // Tag search index
 
-    await client.execute(`
-      CREATE INDEX IF NOT EXISTS idx_users_google ON users(google_id);
-    `);
+    // 2. Comments collection indexes
+    await db.collection("comments").createIndex({ id: 1 }, { unique: true }); // Unique comment ID index
+    await db.collection("comments").createIndex({ thread_id: 1, created_at: 1 }); // Thread comments hierarchy index
 
-    await client.execute(`
-      CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        token TEXT UNIQUE NOT NULL,
-        expires_at INTEGER NOT NULL,
-        created_at INTEGER NOT NULL
-      );
-    `);
+    // 3. Users collection indexes
+    await db.collection("users").createIndex({ id: 1 }, { unique: true }); // Unique user ID index
+    await db.collection("users").createIndex({ username: 1 }, { unique: true }); // Unique username index
+    await db.collection("users").createIndex({ email: 1 }, { unique: true, sparse: true }); // Sparse unique email index
+    await db.collection("users").createIndex({ google_id: 1 }, { sparse: true }); // Sparse Google ID index
 
-    await client.execute(`
-      CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
-    `);
+    // 4. Sessions collection indexes
+    await db.collection("sessions").createIndex({ id: 1 }, { unique: true }); // Unique session ID index
+    await db.collection("sessions").createIndex({ token: 1 }, { unique: true }); // Unique token lookup index
+    await db.collection("sessions").createIndex({ expires_at: 1 }); // Expiration index
 
-    await client.execute(`
-      CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-    `);
+    // 5. Votes collection indexes
+    await db.collection("votes").createIndex({ id: 1 }, { unique: true }); // Unique vote ID index
+    await db.collection("votes").createIndex({ user_id: 1, target_id: 1, target_type: 1 }, { unique: true }); // One vote per target
 
-    await client.execute(`
-      CREATE INDEX IF NOT EXISTS idx_comments_thread ON comments(thread_id);
-    `);
+    // 6. Email verifications collection indexes
+    await db.collection("email_verifications").createIndex({ email: 1 }, { unique: true }); // Unique email OTP index
+    await db.collection("email_verifications").createIndex({ expires_at: 1 }); // Expiration cleanup index
 
-    await client.execute(`
-      CREATE INDEX IF NOT EXISTS idx_threads_created ON threads(created_at DESC);
-    `);
+    // 7. Seed initial sample threads if collection is empty
+    const threadCount = await db.collection("threads").countDocuments(); // Check existing thread count
+    if (threadCount === 0) { // If database is fresh and empty
+      const now = Date.now(); // Current unix epoch timestamp
+      const sampleThreads = [ // Sample seed threads array
+        { // First announcement thread
+          id: "intro-kratuu-welcome", // Unique thread ID
+          user_id: null, // Guest author
+          title: "ยินดีต้อนรับสู่ kratuu (กระทู้) - ชุมชนแลกเปลี่ยนความคิดเห็นขาวดำ", // Title
+          content: `### ยินดีต้อนรับสู่ kratuu\n\nkratuu คือเว็บบอร์ดที่ออกแบบด้วยแนวคิด **Swiss Minimalist** สองสีขาว-ดำ\n\n#### คุณสมบัติหลัก:\n- **โพสต์ได้ทันที**: ระบุชื่อเล่นและ PIN 4 หลัก ไม่ต้องสมัครสมาชิกให้ยุ่งยาก\n- **รองรับ Markdown**: เขียนโค้ด จัดตัวหนา ตัวเอียง หรือแนบลิงก์ได้เต็มรูปแบบ\n- **ระบบโหวตและแท็ก**: จัดเรียงตามความนิยมหรือล่าสุด\n- **ที่คั่นหน้าส่วนตัว (Bookmarks)**: บันทึกกระทู้ที่สนใจไว้ในเครื่องของคุณ\n\nลองตอบกลับหรือสร้างกระทู้ใหม่ได้เลยที่ปุ่มด้านบน`, // Markdown content
+          author_name: "นายกระทู้ (Admin)", // Author
+          author_pin: null, // Author PIN
+          category: "พูดคุยทั่วไป", // Category
+          tags: ["ยินดีต้อนรับ", "kratuu", "announcement"], // Tags array
+          upvotes: 24, // Initial upvotes
+          downvotes: 0, // Initial downvotes
+          views: 182, // Initial views
+          created_at: now - 3600000 * 5, // Timestamp 5 hours ago
+          updated_at: now - 3600000 * 5, // Last update
+        }, // End thread
+        { // Second technology thread
+          id: "tech-minimalist-web-design", // Unique thread ID
+          user_id: null, // Guest author
+          title: "ทำไมเว็บยุคนี้ถึงเริ่มย้อนกลับมาใช้ดีไซน์ขาวดำ Minimalist?", // Title
+          content: `หลายปีที่ผ่านมา เว็บไซต์เต็มไปด้วยสีสัน แอนิเมชันหนักๆ และป็อปอัปที่กวนใจ\n\nการกลับมาของสไตล์ **High Contrast Black & White** ช่วยให้ผู้อ่านโฟกัสที่ **เนื้อหาและความคิด** มากกว่าสิ่งรบกวน\n\nทุกคนคิดเห็นอย่างไรกับการออกแบบแนวนี้ในการอ่านบทความยาวๆ ครับ?`, // Content
+          author_name: "สมาชิกหมายเลข_9401", // Author
+          author_pin: null, // Author PIN
+          category: "เทคโนโลยี", // Category
+          tags: ["เทคโนโลยี", "webdesign", "minimalism"], // Tags array
+          upvotes: 18, // Upvotes
+          downvotes: 1, // Downvotes
+          views: 95, // Views
+          created_at: now - 3600000 * 2, // Timestamp 2 hours ago
+          updated_at: now - 3600000 * 2, // Last update
+        }, // End thread
+        { // Third lifestyle thread
+          id: "pantip-nostalgia-topic", // Unique thread ID
+          user_id: null, // Guest author
+          title: "คิดถึงเสน่ห์ของเว็บบอร์ดแบบดั้งเดิม vs โซเชียลมีเดียฟีดในปัจจุบัน", // Title
+          content: `ใครรู้สึกเหมือนกันบ้างว่าเว็บบอร์ดแบบกระทู้เปิดโอกาสให้คนได้ถกเถียงกันด้วยเหตุผลและข้อมูลมากกว่าอัลกอริทึมของโซเชียลมีเดียที่เน้นแต่ความโกรธและความไว?\n\nกระทู้หนึ่งกระทู้สามารถอยู่ได้เป็นสัปดาห์หรือเป็นเดือนโดยที่ยังมีคนเข้ามาตอบสาระดีๆ อยู่เรื่อยๆ`, // Content
+          author_name: "คนชอบอ่าน", // Author
+          author_pin: null, // Author PIN
+          category: "ชีวิตและสังคม", // Category
+          tags: ["ความรู้สึก", "pantip", "nostalgia", "ชีวิต"], // Tags array
+          upvotes: 31, // Upvotes
+          downvotes: 0, // Downvotes
+          views: 210, // Views
+          created_at: now - 3600000 * 1, // Timestamp 1 hour ago
+          updated_at: now - 3600000 * 1, // Last update
+        }, // End thread
+      ]; // End sampleThreads
 
-    await client.execute(`
-      CREATE TABLE IF NOT EXISTS votes (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        target_id TEXT NOT NULL,
-        target_type TEXT NOT NULL DEFAULT 'thread',
-        vote_type INTEGER NOT NULL,
-        created_at INTEGER NOT NULL,
-        UNIQUE(user_id, target_id, target_type)
-      );
-    `);
+      await db.collection("threads").insertMany(sampleThreads); // Insert sample threads
 
-    await client.execute(`
-      CREATE INDEX IF NOT EXISTS idx_votes_user_target ON votes(user_id, target_id, target_type);
-    `);
+      // Seed starter comments for the welcome thread
+      const sampleComments = [ // Starter comments array
+        { // Comment 1
+          id: "c1", // ID
+          thread_id: "intro-kratuu-welcome", // Target thread
+          user_id: null, // Author ID
+          parent_id: null, // Top-level
+          content: "ชอบดีไซน์ขาวดำมากครับ สบายตา โหลดเร็ว ไม่รกตาเลย", // Content
+          author_name: "ผู้อ่านนิรนาม", // Display name
+          author_pin: null, // PIN
+          upvotes: 5, // Upvotes
+          downvotes: 0, // Downvotes
+          created_at: now - 3600000 * 4, // Timestamp
+        }, // End comment 1
+        { // Comment 2
+          id: "c2", // ID
+          thread_id: "intro-kratuu-welcome", // Target thread
+          user_id: null, // Author ID
+          parent_id: "c1", // Nested reply to c1
+          content: "เห็นด้วยเลย ตัวหนังสืออ่านง่ายและเน้นสาระจริงๆ ครับ", // Content
+          author_name: "โปรแกรมเมอร์หัวใจชิล", // Display name
+          author_pin: null, // PIN
+          upvotes: 3, // Upvotes
+          downvotes: 0, // Downvotes
+          created_at: now - 3600000 * 3, // Timestamp
+        }, // End comment 2
+      ]; // End sampleComments
 
-    await client.execute(`
-      CREATE TABLE IF NOT EXISTS email_verifications (
-        email TEXT PRIMARY KEY,
-        code TEXT NOT NULL,
-        attempts INTEGER NOT NULL DEFAULT 0,
-        expires_at INTEGER NOT NULL,
-        created_at INTEGER NOT NULL
-      );
-    `);
+      await db.collection("comments").insertMany(sampleComments); // Insert sample comments
+    } // End if empty
+  } catch (err) { // Catch index or seeding errors
+    console.error("[MongoDB] Initialization warning:", err); // Log warning
+  } // End try-catch
+} // End ensureDatabaseInitialized
 
-    // Seed sample threads if empty
-    const countRes = await client.execute("SELECT COUNT(*) as count FROM threads");
-    const count = Number(countRes.rows[0]?.count ?? 0);
-
-    if (count === 0) {
-      const now = Date.now();
-      const sampleThreads = [
-        {
-          id: "intro-kratuu-welcome",
-          title: "ยินดีต้อนรับสู่ kratuu (กระทู้) - ชุมชนแลกเปลี่ยนความคิดเห็นขาวดำ",
-          content: `### ยินดีต้อนรับสู่ kratuu\n\nkratuu คือเว็บบอร์ดที่ออกแบบด้วยแนวคิด **Swiss Minimalist** สองสีขาว-ดำ\n\n#### คุณสมบัติหลัก:\n- **โพสต์ได้ทันที**: ระบุชื่อเล่นและ PIN 4 หลัก ไม่ต้องสมัครสมาชิกให้ยุ่งยาก\n- **รองรับ Markdown**: เขียนโค้ด จัดตัวหนา ตัวเอียง หรือแนบลิงก์ได้เต็มรูปแบบ\n- **ระบบโหวตและแท็ก**: จัดเรียงตามความนิยมหรือล่าสุด\n- **ที่คั่นหน้าส่วนตัว (Bookmarks)**: บันทึกกระทู้ที่สนใจไว้ในเครื่องของคุณ\n\nลองตอบกลับหรือสร้างกระทู้ใหม่ได้เลยที่ปุ่มด้านบน`,
-          author_name: "นายกระทู้ (Admin)",
-          category: "พูดคุยทั่วไป",
-          tags: JSON.stringify(["ยินดีต้อนรับ", "kratuu", "announcement"]),
-          upvotes: 24,
-          downvotes: 0,
-          views: 182,
-          created_at: now - 3600000 * 5,
-        },
-        {
-          id: "tech-minimalist-web-design",
-          title: "ทำไมเว็บยุคนี้ถึงเริ่มย้อนกลับมาใช้ดีไซน์ขาวดำ Minimalist?",
-          content: `หลายปีที่ผ่านมา เว็บไซต์เต็มไปด้วยสีสัน แอนิเมชันหนักๆ และป็อปอัปที่กวนใจ\n\nการกลับมาของสไตล์ **High Contrast Black & White** ช่วยให้ผู้อ่านโฟกัสที่ **เนื้อหาและความคิด** มากกว่าสิ่งรบกวน\n\nทุกคนคิดเห็นอย่างไรกับการออกแบบแนวนี้ในการอ่านบทความยาวๆ ครับ?`,
-          author_name: "สมาชิกหมายเลข_9401",
-          category: "เทคโนโลยี",
-          tags: JSON.stringify(["เทคโนโลยี", "webdesign", "minimalism"]),
-          upvotes: 18,
-          downvotes: 1,
-          views: 95,
-          created_at: now - 3600000 * 2,
-        },
-        {
-          id: "pantip-nostalgia-topic",
-          title: "คิดถึงเสน่ห์ของเว็บบอร์ดแบบดั้งเดิม vs โซเชียลมีเดียฟีดในปัจจุบัน",
-          content: `ใครรู้สึกเหมือนกันบ้างว่าเว็บบอร์ดแบบกระทู้เปิดโอกาสให้คนได้ถกเถียงกันด้วยเหตุผลและข้อมูลมากกว่าอัลกอริทึมของโซเชียลมีเดียที่เน้นแต่ความโกรธและความไว?\n\nกระทู้หนึ่งกระทู้สามารถอยู่ได้เป็นสัปดาห์หรือเป็นเดือนโดยที่ยังมีคนเข้ามาตอบสาระดีๆ อยู่เรื่อยๆ`,
-          author_name: "คนชอบอ่าน",
-          category: "ชีวิต",
-          tags: JSON.stringify(["ความรู้สึก", "pantip", "nostalgia", "ชีวิต"]),
-          upvotes: 31,
-          downvotes: 0,
-          views: 210,
-          created_at: now - 3600000 * 1,
-        }
-      ];
-
-      for (const t of sampleThreads) {
-        await client.execute({
-          sql: `INSERT INTO threads (id, title, content, author_name, category, tags, upvotes, downvotes, views, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          args: [t.id, t.title, t.content, t.author_name, t.category, t.tags, t.upvotes, t.downvotes, t.views, t.created_at, t.created_at],
-        });
-
-        // Add sample comments to intro
-        if (t.id === "intro-kratuu-welcome") {
-          await client.execute({
-            sql: `INSERT INTO comments (id, thread_id, parent_id, content, author_name, upvotes, downvotes, created_at)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            args: ["c1", t.id, null, "ชอบดีไซน์ขาวดำมากครับ สบายตา โหลดเร็ว ไม่รกตาเลย", "ผู้อ่านนิรนาม", 5, 0, now - 3600000 * 4],
-          });
-          await client.execute({
-            sql: `INSERT INTO comments (id, thread_id, parent_id, content, author_name, upvotes, downvotes, created_at)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            args: ["c2", t.id, "c1", "เห็นด้วยเลย ตัวหนังสืออ่านง่ายและเน้นสาระจริงๆ ครับ", "โปรแกรมเมอร์หัวใจชิล", 3, 0, now - 3600000 * 3],
-          });
-        }
-      }
-    }
-
-    isInitialized = true;
-  }
-  return client;
-}
+export async function getDb(): Promise<Db> { // Returns connected MongoDB Db instance
+  try { // Try connecting to MongoDB
+    const client = await clientPromise; // Await client connection
+    const db = client.db(dbName); // Select database instance
+    if (!isInitialized) { // Check if initialization has occurred
+      await ensureDatabaseInitialized(db); // Create indexes and seeds
+      isInitialized = true; // Mark as initialized
+    } // End check
+    return db; // Return Db object
+  } catch (err: unknown) { // Handle connection failures
+    console.error("[MongoDB] Connection error:", err); // Log error
+    throw new Error( // Re-throw descriptive error
+      "Unable to connect to MongoDB. Please ensure MONGODB_URI is properly configured in your environment or .env.local." // Error text
+    ); // End Error
+  } // End try-catch
+} // End getDb

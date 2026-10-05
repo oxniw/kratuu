@@ -1,11 +1,11 @@
 // ==============================================================================
 // File: .//Description-of-file/verification_service.md
-// Overview: Generates, sends, and validates 6-digit email registration OTP codes.
+// Overview: Generates, sends, and validates 6-digit email registration OTP codes using MongoDB.
 // ==============================================================================
 
 import crypto from "crypto"; // Import Node.js crypto module for secure random number generation
 import nodemailer from "nodemailer"; // Import nodemailer for dispatching emails
-import { getDb } from "@/lib/db"; // Import SQLite database accessor
+import { getDb } from "@/lib/db"; // Import MongoDB database accessor
 
 const CODE_EXPIRY_MS = 10 * 60 * 1000; // Verification code validity duration of 10 minutes
 const MAX_ATTEMPTS = 5; // Maximum allowable verification attempt retries
@@ -15,7 +15,7 @@ export async function sendVerificationCode(emailRaw: string): Promise<{ // Gener
   message: string; // English status description
   debugCode?: string; // Optional code returned in local development environment
 }> {
-  const email = emailRaw?.trim().toLowerCase(); // Normalize email address to lowercase
+  const email = typeof emailRaw === "string" ? emailRaw.trim().toLowerCase() : ""; // Normalize email address
 
   if (!email) { // Check if email is missing
     return { success: false, message: "Email address is required." }; // Return validation error
@@ -28,14 +28,20 @@ export async function sendVerificationCode(emailRaw: string): Promise<{ // Gener
 
   const db = await getDb(); // Retrieve database instance
 
-  // Upsert verification record into SQLite table
-  await db.execute({ // Execute SQL insert or replace query
-    sql: `
-      INSERT OR REPLACE INTO email_verifications (email, code, attempts, expires_at, created_at)
-      VALUES (?, ?, 0, ?, ?)
-    `, // SQL statement
-    args: [email, code, expiresAt, now], // Query arguments
-  }); // End db execute
+  // Upsert verification record into MongoDB email_verifications collection
+  await db.collection("email_verifications").updateOne( // Execute MongoDB upsert
+    { email: String(email) }, // Match by email
+    {
+      $set: {
+        email: String(email),
+        code: String(code),
+        attempts: 0,
+        expires_at: expiresAt,
+        created_at: now,
+      },
+    },
+    { upsert: true } // Create if doesn't exist
+  ); // End updateOne
 
   // Configure Nodemailer transporter if environment variables exist
   const smtpHost = process.env.SMTP_HOST; // Read SMTP server hostname
@@ -100,8 +106,8 @@ export async function verifyEmailCode( // Validates user-submitted 6-digit code
   emailRaw: string, // Target email address
   codeRaw: string // 6-digit code entered by user
 ): Promise<{ success: boolean; error?: string }> { // Return validation outcome
-  const email = emailRaw?.trim().toLowerCase(); // Normalize email
-  const code = codeRaw?.trim(); // Normalize submitted code
+  const email = typeof emailRaw === "string" ? emailRaw.trim().toLowerCase() : ""; // Normalize email
+  const code = typeof codeRaw === "string" ? codeRaw.trim() : ""; // Normalize submitted code
 
   if (!email || !code) { // Check if either input is missing
     return { success: false, error: "Email and verification code are required." }; // Validation error
@@ -109,36 +115,32 @@ export async function verifyEmailCode( // Validates user-submitted 6-digit code
 
   const db = await getDb(); // Obtain database instance
 
-  const res = await db.execute({ // Query active verification record
-    sql: "SELECT code, attempts, expires_at FROM email_verifications WHERE email = ? LIMIT 1", // SQL select
-    args: [email], // Arguments
-  }); // End db execute
+  const row = await db.collection("email_verifications").findOne({ email: String(email) }); // Query active verification document
 
-  if (res.rows.length === 0) { // Check if record was not found
+  if (!row) { // Check if record was not found
     return { success: false, error: "No verification code requested for this email. Please request a new code." }; // Error response
   } // End empty check
 
-  const row = res.rows[0]; // Read matched row
   const storedCode = String(row.code); // Read stored code
   const attempts = Number(row.attempts || 0); // Read current attempts count
   const expiresAt = Number(row.expires_at || 0); // Read expiration timestamp
   const now = Date.now(); // Current timestamp
 
   if (now > expiresAt) { // Check if code has expired
-    await db.execute({ sql: "DELETE FROM email_verifications WHERE email = ?", args: [email] }); // Purge expired record
+    await db.collection("email_verifications").deleteOne({ email: String(email) }); // Purge expired record
     return { success: false, error: "Verification code has expired. Please request a new code." }; // Expired error
   } // End expired check
 
   if (attempts >= MAX_ATTEMPTS) { // Check if attempt limit exceeded
-    await db.execute({ sql: "DELETE FROM email_verifications WHERE email = ?", args: [email] }); // Invalidate compromised code
+    await db.collection("email_verifications").deleteOne({ email: String(email) }); // Invalidate compromised code
     return { success: false, error: "Too many incorrect attempts. Please request a new verification code." }; // Rate limit error
   } // End attempts check
 
   if (code !== storedCode) { // Verify if submitted code matches stored code
-    await db.execute({ // Increment failed attempt counter
-      sql: "UPDATE email_verifications SET attempts = attempts + 1 WHERE email = ?", // SQL update
-      args: [email], // Arguments
-    }); // End db execute
+    await db.collection("email_verifications").updateOne( // Increment failed attempt counter
+      { email: String(email) },
+      { $inc: { attempts: 1 } }
+    );
     const remaining = MAX_ATTEMPTS - (attempts + 1); // Calculate remaining attempts
     return { // Return mismatch error
       success: false, // Mark failed
@@ -147,7 +149,7 @@ export async function verifyEmailCode( // Validates user-submitted 6-digit code
   } // End mismatch check
 
   // Successfully verified: remove OTP record to prevent replay attacks
-  await db.execute({ sql: "DELETE FROM email_verifications WHERE email = ?", args: [email] }); // Delete record
+  await db.collection("email_verifications").deleteOne({ email: String(email) }); // Delete record
 
   return { success: true }; // Return successful verification
 } // End verifyEmailCode

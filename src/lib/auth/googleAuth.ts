@@ -1,28 +1,28 @@
 // ==============================================================================
 // File: .//Description-of-file/google_auth.md
-// Overview: Google OAuth 2.0 authorization, token exchange, and account synchronization.
+// Overview: Google OAuth 2.0 authorization, token exchange, and account synchronization with MongoDB.
 // ==============================================================================
 
-import crypto from "crypto";
-import { getDb } from "@/lib/db";
-import { SafeUser } from "./types";
+import crypto from "crypto"; // Import crypto module for OAuth state and placeholder generation
+import { getDb } from "@/lib/db"; // Import MongoDB database accessor
+import { SafeUser } from "./types"; // Import SafeUser type
 
-export interface GoogleUserProfile {
-  sub: string; // Google User ID
-  name: string;
-  email: string;
-  picture?: string;
+export interface GoogleUserProfile { // Google profile data structure
+  sub: string; // Google user ID
+  name: string; // User full name
+  email: string; // Verified email address
+  picture?: string; // Optional avatar URL
 }
 
-export function isGoogleOAuthConfigured(): boolean {
+export function isGoogleOAuthConfigured(): boolean { // Checks if OAuth credentials are set
   return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 }
 
-export function generateOAuthState(): string {
+export function generateOAuthState(): string { // Generates random OAuth state parameter
   return crypto.randomBytes(24).toString("hex");
 }
 
-export function getGoogleAuthUrl(redirectUri: string, state: string): string {
+export function getGoogleAuthUrl(redirectUri: string, state: string): string { // Constructs Google OAuth consent screen URL
   const clientId = process.env.GOOGLE_CLIENT_ID || "";
   const params = new URLSearchParams({
     client_id: clientId,
@@ -37,7 +37,7 @@ export function getGoogleAuthUrl(redirectUri: string, state: string): string {
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
 
-export async function exchangeGoogleCode(
+export async function exchangeGoogleCode( // Exchanges auth code for tokens and fetches user info
   code: string,
   redirectUri: string
 ): Promise<GoogleUserProfile> {
@@ -82,47 +82,40 @@ export async function exchangeGoogleCode(
   };
 }
 
-export async function findOrCreateGoogleUser(profile: GoogleUserProfile): Promise<SafeUser> {
-  const db = await getDb();
-  const now = Date.now();
+export async function findOrCreateGoogleUser(profile: GoogleUserProfile): Promise<SafeUser> { // Finds existing user or registers new Google account in MongoDB
+  const db = await getDb(); // Retrieve MongoDB database instance
+  const now = Date.now(); // Current timestamp
 
   // 1. Check if user already exists by google_id
-  const byGoogleId = await db.execute({
-    sql: "SELECT * FROM users WHERE google_id = ? LIMIT 1",
-    args: [profile.sub],
-  });
-
-  if (byGoogleId.rows.length > 0) {
-    const row = byGoogleId.rows[0];
+  const byGoogleId = await db.collection("users").findOne({ google_id: String(profile.sub) }); // Query by google_id
+  if (byGoogleId) { // If user exists
     return {
-      id: String(row.id),
-      username: String(row.username),
-      display_name: String(row.display_name),
-      role: String(row.role || "user"),
-      created_at: Number(row.created_at),
+      id: String(byGoogleId.id),
+      username: String(byGoogleId.username),
+      display_name: String(byGoogleId.display_name),
+      email: byGoogleId.email ? String(byGoogleId.email) : undefined,
+      role: String(byGoogleId.role || "user"),
+      created_at: Number(byGoogleId.created_at),
     };
   }
 
   // 2. Check if user exists by email to link account
   if (profile.email) {
-    const byEmail = await db.execute({
-      sql: "SELECT * FROM users WHERE email = ? LIMIT 1",
-      args: [profile.email.toLowerCase()],
-    });
-
-    if (byEmail.rows.length > 0) {
-      const row = byEmail.rows[0];
-      await db.execute({
-        sql: "UPDATE users SET google_id = ? WHERE id = ?",
-        args: [profile.sub, row.id],
-      });
+    const cleanEmail = profile.email.toLowerCase();
+    const byEmail = await db.collection("users").findOne({ email: cleanEmail });
+    if (byEmail) {
+      await db.collection("users").updateOne(
+        { id: byEmail.id },
+        { $set: { google_id: String(profile.sub) } }
+      );
 
       return {
-        id: String(row.id),
-        username: String(row.username),
-        display_name: String(row.display_name),
-        role: String(row.role || "user"),
-        created_at: Number(row.created_at),
+        id: String(byEmail.id),
+        username: String(byEmail.username),
+        display_name: String(byEmail.display_name),
+        email: byEmail.email ? String(byEmail.email) : undefined,
+        role: String(byEmail.role || "user"),
+        created_at: Number(byEmail.created_at),
       };
     }
   }
@@ -137,18 +130,23 @@ export async function findOrCreateGoogleUser(profile: GoogleUserProfile): Promis
   const placeholderHash = "oauth_google_" + crypto.randomBytes(16).toString("hex");
   const placeholderSalt = crypto.randomBytes(8).toString("hex");
 
-  await db.execute({
-    sql: `
-      INSERT INTO users (id, username, display_name, email, google_id, password_hash, salt, role, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'user', ?)
-    `,
-    args: [userId, uniqueUsername, displayName, profile.email?.toLowerCase() || null, profile.sub, placeholderHash, placeholderSalt, now],
+  await db.collection("users").insertOne({
+    id: userId,
+    username: uniqueUsername,
+    display_name: displayName,
+    email: profile.email ? profile.email.toLowerCase() : null,
+    google_id: String(profile.sub),
+    password_hash: placeholderHash,
+    salt: placeholderSalt,
+    role: "user",
+    created_at: now,
   });
 
   return {
     id: userId,
     username: uniqueUsername,
     display_name: displayName,
+    email: profile.email ? profile.email.toLowerCase() : undefined,
     role: "user",
     created_at: now,
   };

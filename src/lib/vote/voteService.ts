@@ -1,107 +1,111 @@
 // ==============================================================================
 // File: .//Description-of-file/vote_service.md
-// Overview: Business logic and database operations for recording, toggling, and querying user votes.
+// Overview: Business logic and database operations for recording, toggling, and querying user votes with MongoDB.
 // ==============================================================================
 
-import { getDb } from "@/lib/db";
+import { getDb } from "@/lib/db"; // Import MongoDB database accessor
 
-export interface VotePayload {
-  userId: string;
-  targetId: string;
-  targetType: "thread" | "comment";
-  voteType: 1 | -1;
+export interface VotePayload { // Input payload for voting action
+  userId: string; // Authenticated user ID
+  targetId: string; // ID of thread or comment
+  targetType: "thread" | "comment"; // Entity type
+  voteType: 1 | -1; // 1 for upvote, -1 for downvote
 }
 
-export interface VoteResult {
-  upvotes: number;
-  downvotes: number;
-  userVote: 1 | -1 | 0;
+export interface VoteResult { // Returned voting state outcome
+  upvotes: number; // Updated upvotes count
+  downvotes: number; // Updated downvotes count
+  userVote: 1 | -1 | 0; // Current user vote status (0 for retracted)
 }
 
-export async function applyVote({
+export async function applyVote({ // Applies, switches, or retracts vote in MongoDB
   userId,
   targetId,
   targetType,
   voteType,
 }: VotePayload): Promise<VoteResult> {
-  const db = await getDb();
-  const table = targetType === "comment" ? "comments" : "threads";
+  const db = await getDb(); // Retrieve MongoDB database instance
+  const collectionName = targetType === "comment" ? "comments" : "threads"; // Determine target collection
+  const now = Date.now(); // Current timestamp
 
-  // Check existing vote
-  const existingRes = await db.execute({
-    sql: `SELECT vote_type FROM votes WHERE user_id = ? AND target_id = ? AND target_type = ?`,
-    args: [userId, targetId, targetType],
-  });
+  // Check existing vote for this user and target
+  const existingVote = await db.collection("votes").findOne({ // Find vote document
+    user_id: String(userId),
+    target_id: String(targetId),
+    target_type: targetType,
+  }); // End findOne
 
-  const existingVote = existingRes.rows[0]?.vote_type !== undefined
-    ? Number(existingRes.rows[0].vote_type)
-    : null;
+  let nextUserVote: 1 | -1 | 0 = 0; // Track next vote status
 
-  let nextUserVote: 1 | -1 | 0 = 0;
-
-  if (existingVote === voteType) {
-    // Case 1: Toggle off / cancel existing vote
-    await db.execute({
-      sql: `DELETE FROM votes WHERE user_id = ? AND target_id = ? AND target_type = ?`,
-      args: [userId, targetId, targetType],
+  if (existingVote && existingVote.vote_type === voteType) {
+    // Case 1: Toggle off / retract existing vote
+    await db.collection("votes").deleteOne({
+      user_id: String(userId),
+      target_id: String(targetId),
+      target_type: targetType,
     });
 
-    const col = voteType === 1 ? "upvotes" : "downvotes";
-    await db.execute({
-      sql: `UPDATE ${table} SET ${col} = CASE WHEN ${col} > 0 THEN ${col} - 1 ELSE 0 END WHERE id = ?`,
-      args: [targetId],
-    });
+    const field = voteType === 1 ? "upvotes" : "downvotes";
+    await db.collection(collectionName).updateOne(
+      { id: String(targetId), [field]: { $gt: 0 } },
+      { $inc: { [field]: -1 } }
+    );
 
     nextUserVote = 0;
-  } else if (existingVote !== null) {
+  } else if (existingVote) {
     // Case 2: Switch vote (e.g. from down to up or up to down)
-    const now = Date.now();
-    await db.execute({
-      sql: `UPDATE votes SET vote_type = ?, created_at = ? WHERE user_id = ? AND target_id = ? AND target_type = ?`,
-      args: [voteType, now, userId, targetId, targetType],
-    });
+    await db.collection("votes").updateOne(
+      { user_id: String(userId), target_id: String(targetId), target_type: targetType },
+      { $set: { vote_type: voteType, created_at: now } }
+    );
 
     if (voteType === 1) {
       // Switched from -1 to 1: upvotes + 1, downvotes - 1
-      await db.execute({
-        sql: `UPDATE ${table} SET upvotes = upvotes + 1, downvotes = CASE WHEN downvotes > 0 THEN downvotes - 1 ELSE 0 END WHERE id = ?`,
-        args: [targetId],
-      });
+      await db.collection(collectionName).updateOne(
+        { id: String(targetId) },
+        { $inc: { upvotes: 1 } }
+      );
+      await db.collection(collectionName).updateOne(
+        { id: String(targetId), downvotes: { $gt: 0 } },
+        { $inc: { downvotes: -1 } }
+      );
     } else {
       // Switched from 1 to -1: downvotes + 1, upvotes - 1
-      await db.execute({
-        sql: `UPDATE ${table} SET downvotes = downvotes + 1, upvotes = CASE WHEN upvotes > 0 THEN upvotes - 1 ELSE 0 END WHERE id = ?`,
-        args: [targetId],
-      });
+      await db.collection(collectionName).updateOne(
+        { id: String(targetId) },
+        { $inc: { downvotes: 1 } }
+      );
+      await db.collection(collectionName).updateOne(
+        { id: String(targetId), upvotes: { $gt: 0 } },
+        { $inc: { upvotes: -1 } }
+      );
     }
 
     nextUserVote = voteType;
   } else {
     // Case 3: First time voting on this target
     const voteId = "v-" + Date.now().toString(36) + "-" + Math.random().toString(36).substring(2, 6);
-    const now = Date.now();
 
-    await db.execute({
-      sql: `INSERT INTO votes (id, user_id, target_id, target_type, vote_type, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-      args: [voteId, userId, targetId, targetType, voteType, now],
+    await db.collection("votes").insertOne({
+      id: voteId,
+      user_id: String(userId),
+      target_id: String(targetId),
+      target_type: targetType,
+      vote_type: voteType,
+      created_at: now,
     });
 
-    const col = voteType === 1 ? "upvotes" : "downvotes";
-    await db.execute({
-      sql: `UPDATE ${table} SET ${col} = ${col} + 1 WHERE id = ?`,
-      args: [targetId],
-    });
+    const field = voteType === 1 ? "upvotes" : "downvotes";
+    await db.collection(collectionName).updateOne(
+      { id: String(targetId) },
+      { $inc: { [field]: 1 } }
+    );
 
     nextUserVote = voteType;
   }
 
-  // Retrieve fresh counters
-  const countRes = await db.execute({
-    sql: `SELECT upvotes, downvotes FROM ${table} WHERE id = ?`,
-    args: [targetId],
-  });
-
-  const updated = countRes.rows[0];
+  // Retrieve fresh counters from MongoDB
+  const updated = await db.collection(collectionName).findOne({ id: String(targetId) });
 
   return {
     upvotes: Number(updated?.upvotes || 0),
@@ -110,29 +114,26 @@ export async function applyVote({
   };
 }
 
-export async function getUserVoteMap(
+export async function getUserVoteMap( // Retrieves mapping of user votes across multiple target IDs
   userId: string | null | undefined,
   targetIds: string[],
   targetType: "thread" | "comment"
 ): Promise<Record<string, 1 | -1 | 0>> {
   if (!userId || targetIds.length === 0) return {};
 
-  const db = await getDb();
-  const placeholders = targetIds.map(() => "?").join(",");
+  const db = await getDb(); // Access MongoDB
+  const cleanTargetIds = targetIds.map(String); // Sanitize primitives
 
-  const res = await db.execute({
-    sql: `
-      SELECT target_id, vote_type 
-      FROM votes 
-      WHERE user_id = ? AND target_type = ? AND target_id IN (${placeholders})
-    `,
-    args: [userId, targetType, ...targetIds],
-  });
+  const votes = await db.collection("votes").find({ // Find matching user votes
+    user_id: String(userId),
+    target_type: targetType,
+    target_id: { $in: cleanTargetIds },
+  }).toArray(); // Convert cursor to array
 
   const map: Record<string, 1 | -1 | 0> = {};
-  for (const row of res.rows) {
-    const val = Number(row.vote_type);
-    map[String(row.target_id)] = val === 1 || val === -1 ? val : 0;
+  for (const v of votes) {
+    const val = Number(v.vote_type);
+    map[String(v.target_id)] = val === 1 || val === -1 ? val : 0;
   }
   return map;
 }
