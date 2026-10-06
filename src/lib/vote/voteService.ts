@@ -119,15 +119,14 @@ export async function getUserVoteMap( // Retrieves mapping of user votes across 
   targetIds: string[],
   targetType: "thread" | "comment"
 ): Promise<Record<string, 1 | -1 | 0>> {
-  if (!userId || targetIds.length === 0) return {};
-
+  if (!userId || !Array.isArray(targetIds) || targetIds.length === 0) return {}; // Guard against empty or invalid input
+  const cleanTargetIds = targetIds.map(String).filter((id) => id && !id.startsWith("$") && !id.includes(".")); // Sanitize target IDs
+  if (cleanTargetIds.length === 0) return {}; // Return early if no safe IDs remain
   const db = await getDb(); // Access MongoDB
-  const cleanTargetIds = targetIds.map(String); // Sanitize primitives
-
   const votes = await db.collection("votes").find({ // Find matching user votes
-    user_id: String(userId),
-    target_type: targetType,
-    target_id: { $in: cleanTargetIds },
+    user_id: String(userId), // Clean user ID primitive
+    target_type: targetType === "comment" ? "comment" : "thread", // Strict entity type
+    target_id: { $in: cleanTargetIds }, // Safe in query array
   }).toArray(); // Convert cursor to array
 
   const map: Record<string, 1 | -1 | 0> = {};

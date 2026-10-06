@@ -1,23 +1,41 @@
 // ==============================================================================
 // File: .//Description-of-file/auth_check_email_api.md
-// Overview: Endpoint to verify if an email address is real and whether it exists in the database.
+// Overview: Endpoint to verify email syntax, DNS reachability, and database existence with rate limiting.
 // ==============================================================================
 
 import { NextRequest, NextResponse } from "next/server"; // Import Next.js request and response objects
 import { checkEmailExists } from "@/lib/auth/authService"; // Import checkEmailExists service function
 import { verifyRealEmail } from "@/lib/auth/emailValidator"; // Import verifyRealEmail DNS validator
+import { checkRateLimit, getClientIp } from "@/lib/security/rateLimiter"; // Import rate limiter utilities
 
 export async function GET(req: NextRequest) { // Handle GET request to verify email validity and database presence
   try { // Begin request processing try block
-    const { searchParams } = new URL(req.url); // Parse URL search parameters from incoming request
-    const email = searchParams.get("email"); // Extract email parameter from query string
+    const clientIp = getClientIp(req); // Resolve caller IP address
+    const rateCheck = checkRateLimit(`check_email:${clientIp}`, { windowMs: 60 * 1000, maxRequests: 30 }); // Rate limit 30 checks per minute
+    if (!rateCheck.allowed) { // If rate threshold is exceeded
+      return NextResponse.json( // Return 429 Too Many Requests
+        { error: `Too many email verification requests. Please wait ${rateCheck.resetInSeconds} seconds.` }, // Rate limit message
+        { status: 429 } // HTTP 429 status code
+      ); // End return
+    } // End rate check
 
-    if (!email) { // Check if email parameter is missing
+    const { searchParams } = new URL(req.url); // Parse URL search parameters from incoming request
+    const rawEmail = searchParams.get("email"); // Extract email parameter from query string
+
+    if (!rawEmail || typeof rawEmail !== "string") { // Check if email parameter is missing
       return NextResponse.json( // Return bad request response
         { error: "Email query parameter is required." }, // English error message
         { status: 400 } // HTTP 400 Bad Request
       ); // End return
     } // End email check
+
+    const email = rawEmail.trim().toLowerCase(); // Sanitize primitive email string
+    if (email.startsWith("$") || email.includes(".")) { // Basic format sanity
+      const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // Standard regex
+      if (!EMAIL_REGEX.test(email)) { // Reject invalid email syntax
+        return NextResponse.json({ isReal: false, exists: false, message: "Invalid email format." }); // Return syntax error
+      } // End regex check
+    } // End basic check
 
     // 1. Check if email is a real email with an active domain and mail exchange servers
     const realCheck = await verifyRealEmail(email); // Run DNS and syntax verification
@@ -30,7 +48,7 @@ export async function GET(req: NextRequest) { // Handle GET request to verify em
     } // End real check
 
     // 2. Check if email exists in database
-    const dbResult = await checkEmailExists(email); // Query SQLite users table
+    const dbResult = await checkEmailExists(email); // Query MongoDB users collection safely
     if (dbResult.exists) { // If email already exists in database
       return NextResponse.json({ // Return already registered response
         isReal: true, // It is a real email

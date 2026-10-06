@@ -1,6 +1,6 @@
 // ==============================================================================
 // File: .//Description-of-file/auth_send_verification_api.md
-// Overview: Endpoint to send a 6-digit registration verification code to an email.
+// Overview: Endpoint to send a 6-digit registration verification code with rate limiting and injection guards.
 // ==============================================================================
 
 import { NextRequest, NextResponse } from "next/server"; // Import Next.js HTTP request and response types
@@ -8,14 +8,33 @@ import { verifyRealEmail } from "@/lib/auth/emailValidator"; // Import real emai
 import { checkEmailExists } from "@/lib/auth/authService"; // Import database email existence checker
 import { sendVerificationCode } from "@/lib/auth/verificationService"; // Import verification code sender
 import { getDb } from "@/lib/db"; // Import database accessor
+import { hasMongoOperators } from "@/lib/security/mongoSanitizer"; // Import NoSQL operator detector
+import { checkRateLimit, getClientIp } from "@/lib/security/rateLimiter"; // Import rate limiter utilities
+import { sendVerificationSchema } from "@/lib/security/schemas"; // Import runtime validation contract
 
 export async function POST(req: NextRequest) { // Handle POST request to dispatch 6-digit verification code
   try { // Begin request processing try block
-    const { email, username } = await req.json(); // Extract email and username from JSON payload
+    const clientIp = getClientIp(req); // Resolve caller IP address
+    const rateCheck = checkRateLimit(`send_otp:${clientIp}`, { windowMs: 60 * 1000, maxRequests: 3 }); // Rate limit 3 code requests per minute
+    if (!rateCheck.allowed) { // If rate threshold is exceeded
+      return NextResponse.json( // Return 429 Too Many Requests
+        { error: `Too many verification requests. Please wait ${rateCheck.resetInSeconds} seconds before requesting another code.` }, // Rate limit message
+        { status: 429 } // HTTP 429 status code
+      ); // End return
+    } // End rate check
 
-    if (!email || typeof email !== "string") { // Validate email presence
-      return NextResponse.json({ error: "Email is required." }, { status: 400 }); // Return missing email error
-    } // End email check
+    const body = await req.json(); // Extract payload
+    if (hasMongoOperators(body)) { // Check for MongoDB operator injection payload
+      return NextResponse.json({ error: "Invalid request payload" }, { status: 400 }); // Reject malicious payload
+    } // End operator check
+
+    const parsed = sendVerificationSchema.safeParse(body); // Validate schema
+    if (!parsed.success) { // Handle validation error
+      const issue = parsed.error.issues[0]?.message || "Invalid email provided"; // Extract message
+      return NextResponse.json({ error: issue }, { status: 400 }); // Return 400
+    } // End validation check
+
+    const { email, username } = parsed.data; // Extract validated email and optional username
 
     // 1. Verify that email is a real domain that can receive mail
     const realCheck = await verifyRealEmail(email); // Run DNS and syntax verification
@@ -24,7 +43,7 @@ export async function POST(req: NextRequest) { // Handle POST request to dispatc
     } // End real check
 
     // 2. Verify that email is not already registered
-    const dbEmailCheck = await checkEmailExists(email); // Check SQLite users table
+    const dbEmailCheck = await checkEmailExists(email); // Check MongoDB users collection
     if (dbEmailCheck.exists) { // If email is already present
       return NextResponse.json( // Return conflict error
         { error: "This email is already registered in the database." }, // English error message
@@ -33,10 +52,11 @@ export async function POST(req: NextRequest) { // Handle POST request to dispatc
     } // End dbEmailCheck
 
     // 3. Verify that username is not already taken if provided
-    if (username && typeof username === "string") { // If username was provided
+    if (username) { // If username was provided
+      const cleanUsername = String(username).trim().toLowerCase(); // Normalize username
       const db = await getDb(); // Access MongoDB database
-      const existingUser = await db.collection("users").findOne({ // Query username uniqueness
-        username: username.trim().toLowerCase(), // Normalized username string
+      const existingUser = await db.collection("users").findOne({ // Query username uniqueness safely
+        username: cleanUsername, // Safe primitive string query
       }); // End findOne
       if (existingUser) { // If username already exists
         return NextResponse.json( // Return username error

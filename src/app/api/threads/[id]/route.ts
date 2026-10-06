@@ -1,6 +1,6 @@
 // ==============================================================================
 // File: .//Description-of-file/thread_detail_api.md
-// Overview: Retrieves thread content and handles deletion with PIN or author session authentication using MongoDB.
+// Overview: Retrieves thread content and handles deletion with constant-time PIN comparison or author session authentication.
 // ==============================================================================
 
 import { NextRequest, NextResponse } from "next/server"; // Import Next.js server request and response types
@@ -8,6 +8,10 @@ import { getDb } from "@/lib/db"; // Import MongoDB database accessor
 import { Thread, CommentItem } from "@/types"; // Import core Thread and CommentItem interfaces
 import { getSessionUser } from "@/lib/auth/authService"; // Import session user resolution helper
 import { getUserVoteMap } from "@/lib/vote/voteService"; // Import vote mapping utility
+import { hasMongoOperators } from "@/lib/security/mongoSanitizer"; // Import NoSQL operator detector
+import { safeCompareStrings } from "@/lib/security/timingSafe"; // Import constant-time comparison helper
+import { checkRateLimit, getClientIp } from "@/lib/security/rateLimiter"; // Import rate limiter utilities
+import { deleteThreadSchema } from "@/lib/security/schemas"; // Import runtime validation contract
 
 export async function GET( // Handle GET requests for thread detail
   req: NextRequest, // Next.js HTTP request object
@@ -16,7 +20,10 @@ export async function GET( // Handle GET requests for thread detail
   try { // Begin request processing try block
     const sessionUser = await getSessionUser(); // Retrieve active session user if logged in
     const { id } = await props.params; // Await route params to retrieve thread id
-    const cleanId = String(id); // Sanitize primitive string ID
+    const cleanId = String(id).trim(); // Sanitize primitive string ID
+    if (!cleanId || cleanId.startsWith("$") || cleanId.includes(".")) { // Reject invalid or operator-like ID
+      return NextResponse.json({ error: "Invalid thread ID" }, { status: 400 }); // Return bad request
+    } // End ID validation
     const db = await getDb(); // Initialize database connection
 
     // Fetch thread from MongoDB
@@ -27,8 +34,8 @@ export async function GET( // Handle GET requests for thread detail
     } // End not found check
 
     const threadVoteMap = sessionUser // Resolve user vote status if authenticated
-      ? await getUserVoteMap(sessionUser.id, [cleanId], "thread")
-      : {};
+      ? await getUserVoteMap(sessionUser.id, [cleanId], "thread") // Query vote map
+      : {}; // Guest empty map
 
     const thread: Thread = { // Map database document to Thread model
       id: String(row.id), // Thread unique identifier
@@ -37,7 +44,7 @@ export async function GET( // Handle GET requests for thread detail
       content: String(row.content), // Thread content
       author_name: String(row.author_name), // Author display name
       category: String(row.category), // Category name
-      tags: Array.isArray(row.tags) ? row.tags : [], // Tags array
+      tags: Array.isArray(row.tags) ? row.tags.map(String) : [], // Tags array
       upvotes: Number(row.upvotes || 0), // Upvote counter
       downvotes: Number(row.downvotes || 0), // Downvote counter
       views: Number(row.views || 0), // View counter
@@ -51,8 +58,8 @@ export async function GET( // Handle GET requests for thread detail
 
     const commentIds = commentsList.map((c) => String(c.id)); // Extract comment IDs
     const commentVoteMap = sessionUser // Resolve comment votes if authenticated
-      ? await getUserVoteMap(sessionUser.id, commentIds, "comment")
-      : {};
+      ? await getUserVoteMap(sessionUser.id, commentIds, "comment") // Query vote map
+      : {}; // Guest empty map
 
     const rawComments: CommentItem[] = commentsList.map((c) => ({ // Map comment rows
       id: String(c.id), // Comment unique identifier
@@ -95,12 +102,31 @@ export async function DELETE( // Handle DELETE requests for thread deletion
   props: { params: Promise<{ id: string }> } // Route dynamic URL parameters
 ) {
   try { // Begin deletion try block
+    const clientIp = getClientIp(req); // Resolve caller IP address
+    const rateCheck = checkRateLimit(`del_thread:${clientIp}`, { windowMs: 60 * 1000, maxRequests: 10 }); // Limit deletion attempts
+    if (!rateCheck.allowed) { // If limit exceeded
+      return NextResponse.json( // Return 429 Too Many Requests
+        { error: `Too many deletion attempts. Please wait ${rateCheck.resetInSeconds} seconds.` }, // Rate limit error
+        { status: 429 } // HTTP 429 status code
+      ); // End return
+    } // End rate check
+
     const { id } = await props.params; // Await thread ID parameter
-    const cleanId = String(id); // Sanitize primitive
+    const cleanId = String(id).trim(); // Sanitize primitive
+    if (!cleanId || cleanId.startsWith("$") || cleanId.includes(".")) { // Validate ID format
+      return NextResponse.json({ error: "Invalid thread ID" }, { status: 400 }); // Reject invalid ID
+    } // End validation check
+
     let pin = ""; // Initialize author PIN variable
     try { // Try extracting JSON payload
       const body = await req.json(); // Parse request body
-      pin = typeof body.pin === "string" ? body.pin : ""; // Extract PIN string
+      if (hasMongoOperators(body)) { // Check for MongoDB operator injection payload
+        return NextResponse.json({ error: "Invalid request payload" }, { status: 400 }); // Reject malicious payload
+      } // End operator check
+      const parsed = deleteThreadSchema.safeParse(body); // Validate body
+      if (parsed.success && parsed.data.pin) { // Check pin presence
+        pin = parsed.data.pin; // Extract validated PIN string
+      } // End pin assignment
     } catch {} // Ignore parsing failures for empty body
 
     const db = await getDb(); // Initialize database connection
@@ -112,12 +138,12 @@ export async function DELETE( // Handle DELETE requests for thread deletion
       return NextResponse.json({ error: "Thread not found" }, { status: 404 }); // Return 404 Not Found
     } // End not found check
 
-    const storedPin = row.author_pin; // Retrieve stored PIN
+    const storedPin = row.author_pin ? String(row.author_pin) : null; // Retrieve stored PIN
     const threadUserId = row.user_id ? String(row.user_id) : null; // Retrieve owner user ID
 
     // Check if the current authenticated user owns this thread or has admin role
-    const isOwner = sessionUser && threadUserId && sessionUser.id === threadUserId; // Check ownership
-    const isAdmin = sessionUser && sessionUser.role === "admin"; // Check admin role
+    const isOwner = Boolean(sessionUser && threadUserId && sessionUser.id === threadUserId); // Check ownership
+    const isAdmin = Boolean(sessionUser && sessionUser.role === "admin"); // Check admin role
 
     if (!isOwner && !isAdmin) { // If user is not author or admin, verify PIN
       if (!storedPin) { // If no PIN was configured
@@ -127,13 +153,13 @@ export async function DELETE( // Handle DELETE requests for thread deletion
         ); // End return
       } // End missing PIN check
 
-      if (String(storedPin) !== String(pin)) { // Compare submitted PIN against stored hash/pin
+      if (!safeCompareStrings(storedPin, pin)) { // Constant-time PIN comparison to protect against side-channel attacks
         return NextResponse.json({ error: "รหัส PIN ไม่ถูกต้อง" }, { status: 401 }); // Return 401 Unauthorized
       } // End invalid PIN check
     } // End permission check
 
-    await db.collection("comments").deleteMany({ thread_id: cleanId }); // Delete associated comments
-    await db.collection("threads").deleteOne({ id: cleanId }); // Delete thread record
+    await db.collection("comments").deleteMany({ thread_id: cleanId }); // Delete associated comments safely
+    await db.collection("threads").deleteOne({ id: cleanId }); // Delete thread record safely
 
     return NextResponse.json({ success: true }); // Return successful deletion response
   } catch (error) { // Catch unexpected errors

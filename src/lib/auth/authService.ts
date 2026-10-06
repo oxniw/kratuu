@@ -121,6 +121,12 @@ export async function loginUser( // Authenticates user via username/email and pa
 
   const db = await getDb(); // Retrieve MongoDB database instance
   const cleanId = String(identifier); // Ensure primitive string to prevent NoSQL operator injection
+  if (cleanId.startsWith("$")) { // Reject dollar operator prefix
+    return { // Return authentication failure
+      success: false, // Mark failed
+      error: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง", // Authentication error message
+    }; // End return
+  } // End operator check
 
   // Search user by either username or email
   const user = await db.collection("users").findOne({ // Find matched user document
@@ -182,12 +188,12 @@ export async function checkEmailExists(emailRaw: string): Promise<{ // Checks if
   }
 
   const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // Standard email regex
-  if (!EMAIL_REGEX.test(email)) { // Check email format
-    return {
-      exists: false,
-      message: "Invalid email format.",
-    };
-  }
+  if (email.startsWith("$") || !EMAIL_REGEX.test(email)) { // Check email format and reject operator prefix
+    return { // Return format failure
+      exists: false, // Not existing
+      message: "Invalid email format.", // Syntax error message
+    }; // End return
+  } // End format check
 
   const db = await getDb(); // Retrieve MongoDB database instance
   const existing = await db.collection("users").findOne({ email: String(email) }); // Query users collection
