@@ -14,14 +14,7 @@ export async function GET( // Handle GET requests for thread detail
   props: { params: Promise<{ id: string }> } // Route dynamic URL parameters
 ) {
   try { // Begin request processing try block
-    const sessionUser = await getSessionUser(); // Retrieve active session user
-    if (!sessionUser) { // Reject unauthenticated access per security guidelines
-      return NextResponse.json( // Return 401 Unauthorized response
-        { error: "กรุณาเข้าสู่ระบบก่อนดูเนื้อหากระทู้" }, // Thai error message
-        { status: 401 } // HTTP 401 Unauthorized status
-      ); // End return
-    } // End auth check
-
+    const sessionUser = await getSessionUser(); // Retrieve active session user if logged in
     const { id } = await props.params; // Await route params to retrieve thread id
     const cleanId = String(id); // Sanitize primitive string ID
     const db = await getDb(); // Initialize database connection
@@ -33,7 +26,9 @@ export async function GET( // Handle GET requests for thread detail
       return NextResponse.json({ error: "Thread not found" }, { status: 404 }); // Return 404 Not Found
     } // End not found check
 
-    const threadVoteMap = await getUserVoteMap(sessionUser.id, [cleanId], "thread"); // Resolve user vote status
+    const threadVoteMap = sessionUser // Resolve user vote status if authenticated
+      ? await getUserVoteMap(sessionUser.id, [cleanId], "thread")
+      : {};
 
     const thread: Thread = { // Map database document to Thread model
       id: String(row.id), // Thread unique identifier
@@ -55,7 +50,9 @@ export async function GET( // Handle GET requests for thread detail
     const commentsList = await db.collection("comments").find({ thread_id: cleanId }).sort({ created_at: 1 }).toArray(); // Find comments
 
     const commentIds = commentsList.map((c) => String(c.id)); // Extract comment IDs
-    const commentVoteMap = await getUserVoteMap(sessionUser.id, commentIds, "comment"); // Resolve comment votes
+    const commentVoteMap = sessionUser // Resolve comment votes if authenticated
+      ? await getUserVoteMap(sessionUser.id, commentIds, "comment")
+      : {};
 
     const rawComments: CommentItem[] = commentsList.map((c) => ({ // Map comment rows
       id: String(c.id), // Comment unique identifier
