@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) { // Handles querying threads with f
       ]; // End regex filter
     } // End query check
 
-    if (category) { // If category filter is active
+    if (category && category.trim().toLowerCase() !== "board") { // If specific board category filter is active
       const cleanCat = category.trim(); // Trim category string
       const matched = findBoard(cleanCat); // Resolve matching board from categories registry
       const catConditions: any[] = [{ category: cleanCat }, { tags: cleanCat }]; // Base category conditions
