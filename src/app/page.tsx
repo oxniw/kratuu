@@ -118,7 +118,7 @@ function HomeContent() { // Inner content component wrapped in Suspense for useS
   ).slice(0, 10); // Limit to top 10 tags
 
   return ( // Render main component markup
-    <div className="min-h-screen bg-[#fffdfa] dark:bg-[#0d0b0b] text-black dark:text-white flex flex-col">
+    <div className="min-h-screen bg-white dark:bg-black text-black dark:text-white flex flex-col">
       <Header onOpenDrawer={() => setDrawerOpen(true)} />
       <BookmarksDrawer isOpen={drawerOpen} onClose={() => setDrawerOpen(false)} />
 
@@ -248,7 +248,7 @@ export default function HomePage() { // Default exported page component with Sus
   return ( // Render Suspense boundary wrapping HomeContent
     <Suspense // Provide fallback UI for Next.js searchParams prerendering
       fallback={
-        <div className="min-h-screen bg-[#fffdfa] dark:bg-[#0d0b0b] text-black dark:text-white flex items-center justify-center font-mono text-sm">
+        <div className="min-h-screen bg-white dark:bg-black text-black dark:text-white flex items-center justify-center font-mono text-sm">
           กำลังโหลด...
         </div>
       }
