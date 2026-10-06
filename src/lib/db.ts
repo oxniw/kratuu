@@ -10,21 +10,14 @@ declare global { // Augment global scope
   var _mongoClientPromise: Promise<MongoClient> | undefined; // Cached MongoClient promise
 } // End global declaration
 
-const uri = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/kratuu"; // Read connection string from environment
-const dbName = process.env.MONGODB_DB_NAME || "kratuu"; // Read target database name
-
-let clientPromise: Promise<MongoClient>; // Declare client promise variable
-
-if (process.env.NODE_ENV === "development") { // In development mode, use global caching to prevent socket leakage
+function getClientPromise(): Promise<MongoClient> { // Lazily connects to MongoDB
   if (!global._mongoClientPromise) { // If client promise is not yet initialized in global
+    const uri = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/kratuu"; // Read connection string from environment
     const client = new MongoClient(uri); // Instantiate new MongoClient
     global._mongoClientPromise = client.connect(); // Connect and cache promise globally
   } // End if
-  clientPromise = global._mongoClientPromise; // Assign cached promise
-} else { // In production mode, instantiate dedicated client connection
-  const client = new MongoClient(uri); // Instantiate new MongoClient
-  clientPromise = client.connect(); // Connect client
-} // End if-else
+  return global._mongoClientPromise; // Return cached promise
+} // End getClientPromise
 
 let isInitialized = false; // Flag tracking if indexes and seed data have been initialized
 
@@ -150,7 +143,8 @@ async function ensureDatabaseInitialized(db: Db): Promise<void> { // Creates ind
 
 export async function getDb(): Promise<Db> { // Returns connected MongoDB Db instance
   try { // Try connecting to MongoDB
-    const client = await clientPromise; // Await client connection
+    const client = await getClientPromise(); // Await lazy client connection
+    const dbName = process.env.MONGODB_DB_NAME || "kratuu"; // Read target database name
     const db = client.db(dbName); // Select database instance
     if (!isInitialized) { // Check if initialization has occurred
       await ensureDatabaseInitialized(db); // Create indexes and seeds
