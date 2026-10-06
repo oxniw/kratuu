@@ -85,7 +85,6 @@ export async function registerUser( // Registers a new user account in MongoDB
     username: String(username), // User handle
     display_name: String(displayName), // Display name
     email: email ? String(email) : null, // Email address or null
-    google_id: null, // Google OAuth link
     password_hash: hash, // PBKDF2 hashed password
     salt: salt, // Cryptographic salt
     role: "user", // Default role

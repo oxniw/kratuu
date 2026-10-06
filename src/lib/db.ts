@@ -37,7 +37,6 @@ async function ensureDatabaseInitialized(db: Db): Promise<void> { // Creates ind
     await db.collection("users").createIndex({ id: 1 }, { unique: true }); // Unique user ID index
     await db.collection("users").createIndex({ username: 1 }, { unique: true }); // Unique username index
     await db.collection("users").createIndex({ email: 1 }, { unique: true, sparse: true }); // Sparse unique email index
-    await db.collection("users").createIndex({ google_id: 1 }, { sparse: true }); // Sparse Google ID index
 
     // 4. Sessions collection indexes
     await db.collection("sessions").createIndex({ id: 1 }, { unique: true }); // Unique session ID index

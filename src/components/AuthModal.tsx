@@ -371,29 +371,6 @@ export default function AuthModal({ // Main AuthModal component export
               </div>
             )}
 
-            {/* Google OAuth Option */}
-            <div className="mb-4">
-              <a
-                href="/api/auth/google"
-                className="w-full py-2.5 px-4 border border-black dark:border-white flex items-center justify-center gap-2.5 font-mono text-xs font-bold hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-colors"
-              >
-                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                  <path d="M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z" />
-                </svg>
-                <span>เข้าสู่ระบบด้วย Google</span>
-              </a>
-            </div>
-
-            {/* Divider */}
-            <div className="relative my-4 text-center">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-neutral-300 dark:border-neutral-700"></div>
-              </div>
-              <span className="relative bg-white dark:bg-black px-2 text-[11px] font-mono text-neutral-500 uppercase">
-                หรือใช้ชื่อผู้ใช้
-              </span>
-            </div>
-
             {/* Mode Switcher Tabs */}
             <div className="flex border border-black dark:border-white mb-6 text-xs">
               <button
