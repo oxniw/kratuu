@@ -98,6 +98,12 @@ function HomeContent() { // Inner content component wrapped in Suspense for useS
     return () => clearTimeout(timer); // Clean up active timer on unmount or deps change
   }, [isBoardView, fetchThreads]); // Re-run effect when fetchThreads changes
 
+  useEffect(() => { // Mount and update effect tracking current board feed URL
+    if (isBoardView && typeof window !== "undefined") { // Check if currently viewing a board feed
+      sessionStorage.setItem("kratuu_prev_feed", window.location.pathname + window.location.search); // Store active feed path
+    } // End board view check
+  }, [isBoardView, categoryParam]); // Re-run when category changes
+
   // Extract all available tags across current threads
   const availableTags = Array.from( // Collect unique tags array
     new Set(threads.flatMap((t) => t.tags || [])) // Flatten thread tags into unique Set

@@ -53,12 +53,19 @@ export default function ThreadDetailPage({ // Define ThreadDetailPage component
   const [deleteError, setDeleteError] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const handleGoBack = () => { // Navigates back to the previous board or feed page
-    if (typeof window !== "undefined" && window.history.length > 1) { // Check browser history depth
-      router.back(); // Navigate to the previous page
-    } else { // Fallback if no prior navigation history exists
-      router.push("/?category=Board"); // Navigate to the main Board feed
-    } // End history check
+  const handleGoBack = () => { // Navigates back to the exact previous feed or board page where user arrived from
+    if (typeof window !== "undefined") { // Check window environment
+      const savedFeed = sessionStorage.getItem("kratuu_prev_feed"); // Retrieve recorded previous feed URL
+      if (savedFeed && !savedFeed.includes(`/thread/${id}`)) { // Ensure saved feed is not the current thread URL
+        router.push(savedFeed); // Return to recorded previous board feed directly
+        return; // End execution
+      } // End saved feed check
+      if (window.history.length > 1) { // Fallback to browser history if available
+        router.back(); // Navigate back in browser history
+        return; // End execution
+      } // End history check
+    } // End window check
+    router.push("/?category=Board"); // Default fallback to main Board feed
   }; // End handleGoBack
 
   const fetchThreadData = async () => {
@@ -296,7 +303,7 @@ export default function ThreadDetailPage({ // Define ThreadDetailPage component
                 onClick={handleGoBack}
                 className="w-full sm:w-auto px-6 py-2.5 border border-black dark:border-white font-mono text-xs uppercase font-bold hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors cursor-pointer"
               >
-                ← กลับสู่หน้ารวมกระทู้
+                ← กลับสู่หน้ากระทู้
               </button>
             </div>
           </div>
@@ -319,7 +326,7 @@ export default function ThreadDetailPage({ // Define ThreadDetailPage component
             className="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider hover:underline cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>กลับสู่หน้ารวมกระทู้</span>
+            <span>กลับสู่หน้ากระทู้</span>
           </button>
         </div>
 
@@ -335,7 +342,7 @@ export default function ThreadDetailPage({ // Define ThreadDetailPage component
               onClick={handleGoBack}
               className="inline-block mt-4 underline text-xs cursor-pointer font-mono"
             >
-              กลับสู่หน้ารวมกระทู้
+              กลับสู่หน้ากระทู้
             </button>
           </div>
         ) : (

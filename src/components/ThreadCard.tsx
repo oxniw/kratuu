@@ -75,6 +75,9 @@ export default function ThreadCard({ thread, onTagClick }: ThreadCardProps) { //
 
   const handleThreadClick = (e: React.MouseEvent) => { // Handle clicking to view thread details
     e.preventDefault(); // Prevent direct unauthenticated navigation
+    if (typeof window !== "undefined") { // Check window environment
+      sessionStorage.setItem("kratuu_prev_feed", window.location.pathname + window.location.search); // Store current board feed URL
+    } // End storage record
     requireAuth(() => { // Enforce authentication before redirecting to thread
       router.push(`/thread/${thread.id}`); // Navigate to thread detail page
     }, "ดูเนื้อหากระทู้"); // Action description prompt
