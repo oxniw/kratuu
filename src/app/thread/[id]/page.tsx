@@ -53,6 +53,14 @@ export default function ThreadDetailPage({ // Define ThreadDetailPage component
   const [deleteError, setDeleteError] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const handleGoBack = () => { // Navigates back to the previous board or feed page
+    if (typeof window !== "undefined" && window.history.length > 1) { // Check browser history depth
+      router.back(); // Navigate to the previous page
+    } else { // Fallback if no prior navigation history exists
+      router.push("/?category=Board"); // Navigate to the main Board feed
+    } // End history check
+  }; // End handleGoBack
+
   const fetchThreadData = async () => {
     try {
       setLoading(true);
@@ -283,12 +291,13 @@ export default function ThreadDetailPage({ // Define ThreadDetailPage component
               >
                 เข้าสู่ระบบ / ลงทะเบียน
               </button>
-              <Link
-                href="/"
-                className="w-full sm:w-auto px-6 py-2.5 border border-black dark:border-white font-mono text-xs uppercase font-bold hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors"
+              <button
+                type="button"
+                onClick={handleGoBack}
+                className="w-full sm:w-auto px-6 py-2.5 border border-black dark:border-white font-mono text-xs uppercase font-bold hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors cursor-pointer"
               >
                 ← กลับสู่หน้ารวมกระทู้
-              </Link>
+              </button>
             </div>
           </div>
         </main>
@@ -304,13 +313,14 @@ export default function ThreadDetailPage({ // Define ThreadDetailPage component
       <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-8">
         {/* Navigation back */}
         <div className="mb-6 flex items-center justify-between">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider hover:underline"
+          <button
+            type="button"
+            onClick={handleGoBack}
+            className="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider hover:underline cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>กลับสู่หน้ารวมกระทู้</span>
-          </Link>
+          </button>
         </div>
 
         {loading ? (
@@ -320,9 +330,13 @@ export default function ThreadDetailPage({ // Define ThreadDetailPage component
         ) : errorMsg || !thread ? (
           <div className="border border-black dark:border-white p-6 text-center font-mono">
             <p className="text-sm">{errorMsg || "ไม่พบกระทู้"}</p>
-            <Link href="/" className="inline-block mt-4 underline text-xs">
-              กลับไปหน้าแรก
-            </Link>
+            <button
+              type="button"
+              onClick={handleGoBack}
+              className="inline-block mt-4 underline text-xs cursor-pointer font-mono"
+            >
+              กลับสู่หน้ารวมกระทู้
+            </button>
           </div>
         ) : (
           <div className="space-y-8">

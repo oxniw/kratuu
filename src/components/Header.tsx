@@ -3,62 +3,50 @@
 // Overview: Top navigation header with brand mark, theme switcher, bookmarks, and user profile menu.
 // ==============================================================================
 
-"use client";
+"use client"; // Enable React Client Component features
 
-import React, { useEffect, useState } from "react";
-import Link from "next/link";
-import { getBookmarks } from "@/lib/storage";
-import ThemeToggle from "@/components/ThemeToggle";
-import AuthModal from "@/components/AuthModal";
-import UserProfileMenu from "@/components/UserProfileMenu";
-import CategoryDrawer from "@/components/CategoryDrawer";
-import { Bookmark, PenLine, List } from "lucide-react";
+import React, { useEffect, useState } from "react"; // Import React core hooks
+import Link from "next/link"; // Import Link component for routing
+import { getBookmarks } from "@/lib/storage"; // Import storage bookmark resolver
+import ThemeToggle from "@/components/ThemeToggle"; // Import theme toggle component
+import AuthModal from "@/components/AuthModal"; // Import authentication modal
+import UserProfileMenu from "@/components/UserProfileMenu"; // Import user profile menu
+import CategoryDrawer from "@/components/CategoryDrawer"; // Import board directory slide-out drawer
+import { Bookmark, List } from "lucide-react"; // Import navigation icons
+import { useAuthGuard } from "@/hooks/useAuthGuard"; // Import authentication guard hook
 
-import { useAuthGuard } from "@/hooks/useAuthGuard";
-import { useRouter } from "next/navigation";
+interface HeaderProps { // Contract for Header properties
+  onOpenDrawer?: () => void; // Callback to open bookmarks drawer
+} // End HeaderProps interface
 
-interface HeaderProps {
-  onOpenDrawer?: () => void;
-}
+export default function Header({ onOpenDrawer = () => {} }: HeaderProps) { // Renders top application header
+  const { requireAuth } = useAuthGuard(); // Extract authentication guard trigger
+  const [bookmarkCount, setBookmarkCount] = useState(0); // Store count of saved bookmarks
+  const [authModalOpen, setAuthModalOpen] = useState(false); // Track auth modal visibility
+  const [authModalMode, setAuthModalMode] = useState<"login" | "register">("login"); // Track auth modal active mode
+  const [categoryDrawerOpen, setCategoryDrawerOpen] = useState(false); // Track board directory drawer visibility
 
-export default function Header({ onOpenDrawer = () => {} }: HeaderProps) {
-  const router = useRouter();
-  const { isAuthenticated, requireAuth } = useAuthGuard();
-  const [bookmarkCount, setBookmarkCount] = useState(0);
-  const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [authModalMode, setAuthModalMode] = useState<"login" | "register">("login");
-  const [categoryDrawerOpen, setCategoryDrawerOpen] = useState(false);
+  useEffect(() => { // Mount effect synchronizing bookmarks count
+    setBookmarkCount(getBookmarks().length); // Set initial bookmark count
+    const handleStorageUpdate = () => { // Storage change listener
+      setBookmarkCount(getBookmarks().length); // Update bookmark count
+    }; // End handleStorageUpdate
+    window.addEventListener("kratuu_storage_updated", handleStorageUpdate); // Attach event listener
+    return () => { // Cleanup listener on unmount
+      window.removeEventListener("kratuu_storage_updated", handleStorageUpdate); // Remove listener
+    }; // End cleanup
+  }, []); // Run effect once on mount
 
-  useEffect(() => {
-    setBookmarkCount(getBookmarks().length);
+  const openLogin = () => { // Opens auth modal in login tab
+    setAuthModalMode("login"); // Set mode to login
+    setAuthModalOpen(true); // Open modal
+  }; // End openLogin
 
-    const handleStorageUpdate = () => {
-      setBookmarkCount(getBookmarks().length);
-    };
+  const handleOpenDrawer = () => { // Handles bookmarks drawer click with auth requirement
+    requireAuth(() => onOpenDrawer(), "เข้าดูคลังกระทู้"); // Require auth before opening bookmarks
+  }; // End handleOpenDrawer
 
-    window.addEventListener("kratuu_storage_updated", handleStorageUpdate);
-    return () => {
-      window.removeEventListener("kratuu_storage_updated", handleStorageUpdate);
-    };
-  }, []);
-
-  const openLogin = () => {
-    setAuthModalMode("login");
-    setAuthModalOpen(true);
-  };
-
-  const handleOpenDrawer = () => {
-    requireAuth(() => onOpenDrawer(), "เข้าดูคลังกระทู้");
-  };
-
-  const handleNewThreadClick = (e: React.MouseEvent) => {
-    if (!isAuthenticated) {
-      e.preventDefault();
-      requireAuth(() => router.push("/new"), "ตั้งกระทู้ใหม่");
-    }
-  };
-
-  return (
+  return ( // Render header component layout
     <>
       <header className="border-b border-black dark:border-white bg-white dark:bg-black text-black dark:text-white sticky top-0 z-40">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -104,17 +92,7 @@ export default function Header({ onOpenDrawer = () => {} }: HeaderProps) {
               )}
             </button>
 
-            {/* 3. New Thread Button */}
-            <Link
-              href="/new"
-              onClick={handleNewThreadClick}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-black text-white dark:bg-white dark:text-black border border-black dark:border-white hover:opacity-85 transition-opacity font-medium cursor-pointer"
-            >
-              <PenLine className="w-4 h-4" />
-              <span className="hidden sm:inline">ตั้งกระทู้</span>
-            </Link>
-
-            {/* 4. Top-Right Corner User Profile Menu */}
+            {/* 3. Top-Right Corner User Profile Menu */}
             <UserProfileMenu
               onOpenAuth={openLogin}
               onOpenDrawer={onOpenDrawer}
@@ -136,5 +114,5 @@ export default function Header({ onOpenDrawer = () => {} }: HeaderProps) {
         initialMode={authModalMode}
       />
     </>
-  );
-}
+  ); // End render
+} // End Header

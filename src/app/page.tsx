@@ -14,15 +14,13 @@ import ThreadCard from "@/components/ThreadCard"; // Import individual thread it
 import BookmarksDrawer from "@/components/BookmarksDrawer"; // Import bookmarks drawer component
 import DirectoryLanding from "@/components/DirectoryLanding"; // Import 4chan-styled directory landing component
 import { Thread } from "@/types"; // Import Thread TypeScript interface
-import { useAuthGuard } from "@/hooks/useAuthGuard"; // Import authentication guard hook
 import { findBoard } from "@/lib/categories"; // Import category lookup helper
-import { PenLine, RefreshCw, ArrowLeft, LayoutGrid } from "lucide-react"; // Import UI icons
+import { RefreshCw, ArrowLeft, LayoutGrid } from "lucide-react"; // Import UI icons
 
 function HomeContent() { // Inner content component wrapped in Suspense for useSearchParams
   const router = useRouter(); // Initialize router instance for navigation
   const searchParams = useSearchParams(); // Read URL search query parameters
   const categoryParam = searchParams.get("category"); // Extract active category filter parameter
-  const { isAuthenticated, requireAuth } = useAuthGuard(); // Initialize auth guard state and helper
   const [threads, setThreads] = useState<Thread[]>([]); // Store list of fetched threads
   const [loading, setLoading] = useState(true); // Track loading indicator state
   const [drawerOpen, setDrawerOpen] = useState(false); // Track bookmarks drawer visibility
@@ -62,25 +60,13 @@ function HomeContent() { // Inner content component wrapped in Suspense for useS
     ? `พื้นที่แลกเปลี่ยนความคิดเห็นในห้อง ${categoryParam} ปราศจากสิ่งรบกวน` // Raw category description
     : "พื้นที่แลกเปลี่ยนความคิดเห็น สองสีขาว-ดำ โฟกัสที่สาระและบทสนทนา ปราศจากสิ่งรบกวน"; // Default platform description
 
-  const newThreadHref = categoryParam // Determine target href for thread creation button
-    ? `/new?category=${encodeURIComponent(categoryParam)}` // Link to new thread with pre-selected category
-    : "/new"; // Standard new thread link
-
-  const handleBannerNewThread = (e: React.MouseEvent) => { // Handle click on banner new thread button
-    if (!isAuthenticated) { // Check if current user is unauthenticated
-      e.preventDefault(); // Stop default anchor link navigation
-      const actionName = categoryParam ? "ตั้งกระทู้ในห้องนี้" : "ตั้งกระทู้ใหม่"; // Set action prompt message
-      requireAuth(() => router.push(newThreadHref), actionName); // Trigger sign in requirement prompt
-    } // End unauthenticated check
-  }; // End handleBannerNewThread
-
-  const handleEmptyStateNewThread = (e: React.MouseEvent) => { // Handle click on empty state first thread button
-    if (!isAuthenticated) { // Check if current user is unauthenticated
-      e.preventDefault(); // Stop default anchor link navigation
-      const actionName = categoryParam ? "เขียนกระทู้แรกในห้องนี้" : "เขียนกระทู้แรก"; // Set action prompt message
-      requireAuth(() => router.push(newThreadHref), actionName); // Trigger sign in requirement prompt
-    } // End unauthenticated check
-  }; // End handleEmptyStateNewThread
+  const handleGoBack = () => { // Navigates back to previous page or falls back to directory
+    if (typeof window !== "undefined" && window.history.length > 1) { // Check browser history depth
+      router.back(); // Go back to previous page
+    } else { // Fallback if no history exists
+      router.push("/"); // Navigate to root landing page
+    } // End fallback
+  }; // End handleGoBack
 
   const fetchThreads = useCallback(async () => { // Fetch threads from backend API with active filters
     if (!isBoardView) return; // Do not fetch threads if on directory landing view
@@ -129,13 +115,14 @@ function HomeContent() { // Inner content component wrapped in Suspense for useS
           <div className="space-y-6">
             {/* Top Navigation Bar back to Directory */}
             <div className="flex items-center justify-between border-b border-black dark:border-white pb-3">
-              <Link
-                href="/"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono border border-black dark:border-white hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-colors"
+              <button
+                type="button"
+                onClick={handleGoBack}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono border border-black dark:border-white hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-colors cursor-pointer"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
-                <span>สารบัญ Boards (Directory)</span>
-              </Link>
+                <span>กลับสู่หน้าก่อนหน้านี้</span>
+              </button>
 
               <div className="flex items-center gap-2">
                 <span className="text-xs font-mono text-neutral-500 hidden sm:inline">
@@ -151,29 +138,18 @@ function HomeContent() { // Inner content component wrapped in Suspense for useS
               </div>
             </div>
 
-            {/* Editorial Sub-banner (Old Landing Page Header) */}
+            {/* Editorial Sub-banner (Old Landing Page Header without new thread button) */}
             <section className="border border-black dark:border-white p-6 sm:p-8 bg-white dark:bg-black">
-              <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-                <div>
-                  <p className="text-xs font-mono uppercase tracking-widest text-neutral-500 dark:text-neutral-400 mb-1">
-                    {bannerTagline}
-                  </p>
-                  <h1 className="text-2xl sm:text-4xl font-black font-mono tracking-tight uppercase">
-                    {bannerTitle}
-                  </h1>
-                  <p className="text-sm font-sans mt-2 max-w-lg text-neutral-700 dark:text-neutral-300">
-                    {bannerDescription}
-                  </p>
-                </div>
-
-                <Link
-                  href={newThreadHref}
-                  onClick={handleBannerNewThread}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-black text-white dark:bg-white dark:text-black border border-black dark:border-white font-mono text-xs uppercase font-bold hover:opacity-85 transition-opacity whitespace-nowrap self-start sm:self-end"
-                >
-                  <PenLine className="w-3.5 h-3.5" />
-                  <span>{isMainBoard ? "+ ตั้งกระทู้ใหม่" : "+ ตั้งกระทู้ในห้องนี้"}</span>
-                </Link>
+              <div>
+                <p className="text-xs font-mono uppercase tracking-widest text-neutral-500 dark:text-neutral-400 mb-1">
+                  {bannerTagline}
+                </p>
+                <h1 className="text-2xl sm:text-4xl font-black font-mono tracking-tight uppercase">
+                  {bannerTitle}
+                </h1>
+                <p className="text-sm font-sans mt-2 max-w-lg text-neutral-700 dark:text-neutral-300">
+                  {bannerDescription}
+                </p>
               </div>
             </section>
 
@@ -204,20 +180,11 @@ function HomeContent() { // Inner content component wrapped in Suspense for useS
                   </p>
                   <p className="text-xs text-neutral-500">
                     {isMainBoard
-                      ? "ร่วมเป็นคนแรกที่เปิดประเด็นการสนทนา"
+                      ? "ยังไม่มีการสนทนาในกระดานนี้"
                       : searchQuery || selectedTag
                       ? "ลองเปลี่ยนคำค้นหา หรือล้างการกรองแท็ก"
-                      : "ยังไม่มีกระทู้ในห้องนี้ ร่วมเป็นคนแรกที่เปิดประเด็น"}
+                      : "ยังไม่มีกระทู้ในห้องนี้"}
                   </p>
-                  <div className="pt-2">
-                    <Link
-                      href={newThreadHref}
-                      onClick={handleEmptyStateNewThread}
-                      className="inline-block px-4 py-2 border border-black dark:border-white text-xs hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-colors"
-                    >
-                      {isMainBoard ? "+ เขียนกระทู้แรก" : "+ เขียนกระทู้แรกในห้องนี้"}
-                    </Link>
-                  </div>
                 </div>
               ) : (
                 threads.map((thread) => (
