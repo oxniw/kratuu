@@ -5,18 +5,12 @@
 
 import { NextRequest, NextResponse } from "next/server"; // Import Next.js request and response types
 import { getDb } from "@/lib/db"; // Import MongoDB database accessor
-import { getSessionUser } from "@/lib/auth/authService"; // Import session user resolver
 
 export async function POST( // Handle POST requests to increment thread view count
   req: NextRequest, // Next.js HTTP request object
   props: { params: Promise<{ id: string }> } // Route dynamic URL parameters
 ) {
   try { // Begin view count increment try block
-    const sessionUser = await getSessionUser(); // Check active user session
-    if (!sessionUser) { // Reject unauthenticated view increments
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); // Return 401
-    } // End auth check
-
     const { id } = await props.params; // Await thread ID
     const cleanId = String(id); // Sanitize primitive
     const db = await getDb(); // Retrieve MongoDB database instance
