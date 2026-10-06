@@ -115,7 +115,8 @@ export async function GET(req: NextRequest) { // Handles querying threads with f
     return NextResponse.json({ threads }); // Return JSON response
   } catch (error) { // Catch unexpected query errors
     console.error("GET /api/threads error:", error); // Log error
-    return NextResponse.json({ error: "Failed to fetch threads" }, { status: 500 }); // Return 500 error
+    const message = error instanceof Error ? error.message : "Failed to fetch threads";
+    return NextResponse.json({ error: message }, { status: 500 }); // Return 500 error
   }
 }
 

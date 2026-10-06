@@ -12,7 +12,10 @@ declare global { // Augment global scope
 
 function getClientPromise(): Promise<MongoClient> { // Lazily connects to MongoDB
   if (!global._mongoClientPromise) { // If client promise is not yet initialized in global
-    const uri = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/kratuu"; // Read connection string from environment
+    const uri = process.env.MONGODB_URI; // Read connection string from environment
+    if (!uri) { // Guard against missing connection string
+      throw new Error("MONGODB_URI is not configured in environment variables"); // Descriptive error
+    } // End guard
     const client = new MongoClient(uri); // Instantiate new MongoClient
     global._mongoClientPromise = client.connect(); // Connect and cache promise globally
   } // End if
@@ -151,9 +154,8 @@ export async function getDb(): Promise<Db> { // Returns connected MongoDB Db ins
     } // End check
     return db; // Return Db object
   } catch (err: unknown) { // Handle connection failures
-    console.error("[MongoDB] Connection error:", err); // Log error
-    throw new Error( // Re-throw descriptive error
-      "Unable to connect to MongoDB. Please ensure MONGODB_URI is properly configured in your environment or .env.local." // Error text
-    ); // End Error
+    const msg = err instanceof Error ? err.message : String(err); // Extract error message
+    console.error("[MongoDB] Connection error:", msg); // Log error
+    throw new Error(`[MongoDB] ${msg}`); // Propagate specific reason
   } // End try-catch
 } // End getDb
