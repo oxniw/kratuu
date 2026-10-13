@@ -73,6 +73,21 @@ function NewThreadContent() { // Inner component reading search params wrapped i
     }
   }, [authLoading, isAuthenticated, requireAuth, categoryParam]);
 
+  const handleGoBack = () => { // Navigates back to the previous feed or board where user arrived from
+    if (typeof window !== "undefined") { // Check window environment
+      const savedFeed = sessionStorage.getItem("kratuu_prev_feed"); // Retrieve recorded previous feed URL
+      if (savedFeed && !savedFeed.includes("/new")) { // Ensure saved feed is not the compose page
+        router.push(savedFeed); // Return to recorded previous board feed directly
+        return; // End execution
+      } // End saved feed check
+      if (window.history.length > 1) { // Fallback to browser history if available
+        router.back(); // Navigate back in browser history
+        return; // End execution
+      } // End history check
+    } // End window check
+    router.push("/?category=Board"); // Default fallback to main Board feed
+  }; // End handleGoBack
+
   useEffect(() => {
     if (user) {
       setAuthorName(user.display_name);
@@ -173,13 +188,14 @@ function NewThreadContent() { // Inner component reading search params wrapped i
       <main className="flex-1 max-w-3xl w-full mx-auto px-4 py-8">
         {/* Navigation back */}
         <div className="mb-6">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider hover:underline"
+          <button
+            type="button"
+            onClick={handleGoBack}
+            className="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider hover:underline cursor-pointer"
           >
-            <ArrowLeft className="w-4 h-4" />
-            <span>กลับสู่หน้ารวมกระทู้</span>
-          </Link>
+            <ArrowLeft className="w-4 h-4" /> {/* Back arrow navigation icon */}
+            <span>กลับสู่หน้ากระทู้</span> {/* Return to previous board feed link text */}
+          </button>
         </div>
 
         {/* Heading */}
