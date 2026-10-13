@@ -111,7 +111,7 @@ function HomeContent() { // Inner content component wrapped in Suspense for useS
 
   return ( // Render main component markup
     <div className="min-h-screen bg-white dark:bg-black text-black dark:text-white flex flex-col">
-      <Header onOpenDrawer={() => setDrawerOpen(true)} />
+      <Header onOpenDrawer={() => setDrawerOpen(true)} hideNewThreadButton={isBoardView} />
       <BookmarksDrawer isOpen={drawerOpen} onClose={() => setDrawerOpen(false)} />
 
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-6 sm:py-8">
