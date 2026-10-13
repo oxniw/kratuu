@@ -1,29 +1,26 @@
 // ==============================================================================
 // File: .//Description-of-file/header.md
-// Overview: Top navigation header with brand mark, theme switcher, bookmarks, create thread button, and user profile menu.
+// Overview: Top navigation header with brand mark, theme switcher, bookmarks, and user profile menu.
 // ==============================================================================
 
 "use client"; // Enable React Client Component features
 
 import React, { useEffect, useState } from "react"; // Import React core hooks
 import Link from "next/link"; // Import Link component for routing
-import { useRouter } from "next/navigation"; // Import Next.js router hook
 import { getBookmarks } from "@/lib/storage"; // Import storage bookmark resolver
 import ThemeToggle from "@/components/ThemeToggle"; // Import theme toggle component
 import AuthModal from "@/components/AuthModal"; // Import authentication modal
 import UserProfileMenu from "@/components/UserProfileMenu"; // Import user profile menu
 import CategoryDrawer from "@/components/CategoryDrawer"; // Import board directory slide-out drawer
-import { Bookmark, List, PenLine } from "lucide-react"; // Import navigation icons
+import { Bookmark, List } from "lucide-react"; // Import navigation icons
 import { useAuthGuard } from "@/hooks/useAuthGuard"; // Import authentication guard hook
 
 interface HeaderProps { // Contract for Header properties
   onOpenDrawer?: () => void; // Callback to open bookmarks drawer
-  hideNewThreadButton?: boolean; // Flag to hide create thread button on board page
 } // End HeaderProps interface
 
-export default function Header({ onOpenDrawer = () => {}, hideNewThreadButton = false }: HeaderProps) { // Renders top application header
-  const router = useRouter(); // Initialize router instance for navigation
-  const { isAuthenticated, requireAuth } = useAuthGuard(); // Extract authentication guard trigger
+export default function Header({ onOpenDrawer = () => {} }: HeaderProps) { // Renders top application header
+  const { requireAuth } = useAuthGuard(); // Extract authentication guard trigger
   const [bookmarkCount, setBookmarkCount] = useState(0); // Store count of saved bookmarks
   const [authModalOpen, setAuthModalOpen] = useState(false); // Track auth modal visibility
   const [authModalMode, setAuthModalMode] = useState<"login" | "register">("login"); // Track auth modal active mode
@@ -48,13 +45,6 @@ export default function Header({ onOpenDrawer = () => {}, hideNewThreadButton = 
   const handleOpenDrawer = () => { // Handles bookmarks drawer click with auth requirement
     requireAuth(() => onOpenDrawer(), "เข้าดูคลังกระทู้"); // Require auth before opening bookmarks
   }; // End handleOpenDrawer
-
-  const handleNewThreadClick = (e: React.MouseEvent) => { // Handles new thread creation button click
-    if (!isAuthenticated) { // Check if user is not authenticated
-      e.preventDefault(); // Stop default navigation
-      requireAuth(() => router.push("/new"), "สร้างกระทู้ใหม่"); // Trigger auth requirement modal
-    } // End auth check
-  }; // End handleNewThreadClick
 
   return ( // Render header component layout
     <>
@@ -102,20 +92,7 @@ export default function Header({ onOpenDrawer = () => {}, hideNewThreadButton = 
               )}
             </button>
 
-            {/* 3. Create Thread Button (shown on every page except board page) */}
-            {!hideNewThreadButton && (
-              <Link
-                href="/new"
-                onClick={handleNewThreadClick}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-black text-white dark:bg-white dark:text-black border border-black dark:border-white hover:opacity-85 transition-opacity font-medium cursor-pointer"
-                title="สร้างกระทู้ใหม่"
-              >
-                <PenLine className="w-4 h-4" />
-                <span className="text-xs sm:text-sm">สร้างกระทู้</span> {/* Text label for create thread button */}
-              </Link>
-            )}
-
-            {/* 4. Top-Right Corner User Profile Menu */}
+            {/* 3. Top-Right Corner User Profile Menu */}
             <UserProfileMenu
               onOpenAuth={openLogin}
               onOpenDrawer={onOpenDrawer}
