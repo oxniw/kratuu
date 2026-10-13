@@ -3,25 +3,28 @@
 // Overview: Domain types and contracts for user authentication, accounts, and sessions.
 // ==============================================================================
 
-export interface User {
-  id: string;
-  username: string;
-  display_name: string;
-  email?: string | null;
-  password_hash: string;
-  salt: string;
-  role: string;
-  created_at: number;
-}
+import { Role } from "./roles"; // Import domain Role type
+export type { Role }; // Re-export Role type for external consumers
 
-export interface SafeUser {
-  id: string;
-  username: string;
-  display_name: string;
-  email?: string | null;
-  role: string;
-  created_at: number;
-}
+export interface User { // Database user entity interface
+  id: string; // Unique user identifier
+  username: string; // Unique alphanumeric login handle
+  display_name: string; // Public display name
+  email?: string | null; // Optional verified email
+  password_hash: string; // Hashed password
+  salt: string; // Password salt
+  role: Role; // User role in the system: admin, user, dev
+  created_at: number; // Registration timestamp
+} // End User
+
+export interface SafeUser { // Sanitized user entity for public client transmission
+  id: string; // Unique user identifier
+  username: string; // Unique alphanumeric login handle
+  display_name: string; // Public display name
+  email?: string | null; // Optional verified email
+  role: Role; // User role in the system: admin, user, dev
+  created_at: number; // Registration timestamp
+} // End SafeUser
 
 export interface Session {
   id: string;

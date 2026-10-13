@@ -58,6 +58,7 @@ export async function POST( // Handle POST requests to append comments
       id: commentId, // Unique comment ID
       thread_id: cleanThreadId, // Associated thread ID
       user_id: sessionUser.id, // Authenticated commenter user ID
+      author_role: sessionUser.role || "user", // Commenter role: admin, user, dev
       parent_id: parent_id && parent_id.trim() ? parent_id.trim() : null, // Parent ID for nested reply
       content: content.trim(), // Comment text
       author_name: author, // Author display name

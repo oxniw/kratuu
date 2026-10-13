@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation"; // Import Next router hook for guar
 import { Thread } from "@/types"; // Import Thread type
 import { toggleBookmark, isBookmarked } from "@/lib/storage"; // Import bookmark storage utilities
 import { useAuthGuard } from "@/hooks/useAuthGuard"; // Import authentication gate hook
+import { getRoleBadgeInfo } from "@/lib/auth/roles"; // Import role badge metadata resolver
 import { MessageSquare, Eye, Bookmark, ChevronUp, ChevronDown } from "lucide-react"; // Import UI icons
 
 interface ThreadCardProps { // Define ThreadCard props interface
@@ -33,7 +34,8 @@ export default function ThreadCard({ thread, onTagClick }: ThreadCardProps) { //
     setUserVote(thread.user_vote ?? 0);
   }, [thread.upvotes, thread.downvotes, thread.user_vote]);
 
-  const score = upvotes - downvotes;
+  const score = upvotes - downvotes; // Compute net vote score
+  const roleBadge = (thread.author_role === "admin" || thread.author_role === "dev") ? getRoleBadgeInfo(thread.author_role) : null; // Compute author role badge
 
   const handleVote = (type: 1 | -1) => {
     requireAuth(async () => {
@@ -125,7 +127,14 @@ export default function ThreadCard({ thread, onTagClick }: ThreadCardProps) { //
             <span className="border border-black dark:border-white px-1.5 py-0.5 text-black dark:text-white font-semibold">
               {thread.category}
             </span>
-            <span>โดย {thread.author_name}</span>
+            <span className="inline-flex items-center gap-1">
+              <span>โดย {thread.author_name}</span>
+              {roleBadge && (
+                <span className={roleBadge.className} title={roleBadge.description}>
+                  {roleBadge.tag}
+                </span>
+              )}
+            </span>
             <span>•</span>
             <span>{formatTime(thread.created_at)}</span>
           </div>

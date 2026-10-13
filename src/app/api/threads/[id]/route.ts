@@ -40,6 +40,7 @@ export async function GET( // Handle GET requests for thread detail
     const thread: Thread = { // Map database document to Thread model
       id: String(row.id), // Thread unique identifier
       user_id: row.user_id ? String(row.user_id) : null, // Author user ID if registered
+      author_role: row.author_role ? String(row.author_role) : undefined, // Author role: admin, user, dev
       title: String(row.title), // Thread title
       content: String(row.content), // Thread content
       author_name: String(row.author_name), // Author display name
@@ -63,6 +64,8 @@ export async function GET( // Handle GET requests for thread detail
 
     const rawComments: CommentItem[] = commentsList.map((c) => ({ // Map comment rows
       id: String(c.id), // Comment unique identifier
+      user_id: c.user_id ? String(c.user_id) : null, // Commenter user ID
+      author_role: c.author_role ? String(c.author_role) : undefined, // Commenter role: admin, user, dev
       thread_id: String(c.thread_id), // Associated thread ID
       parent_id: c.parent_id ? String(c.parent_id) : null, // Parent comment ID if nested reply
       content: String(c.content), // Comment body content
@@ -143,9 +146,9 @@ export async function DELETE( // Handle DELETE requests for thread deletion
 
     // Check if the current authenticated user owns this thread or has admin role
     const isOwner = Boolean(sessionUser && threadUserId && sessionUser.id === threadUserId); // Check ownership
-    const isAdmin = Boolean(sessionUser && sessionUser.role === "admin"); // Check admin role
+    const canModerate = Boolean(sessionUser && (sessionUser.role === "admin" || sessionUser.role === "dev")); // Check admin or dev role
 
-    if (!isOwner && !isAdmin) { // If user is not author or admin, verify PIN
+    if (!isOwner && !canModerate) { // If user is neither author nor moderator, verify PIN
       if (!storedPin) { // If no PIN was configured
         return NextResponse.json( // Return forbidden response
           { error: "กระทู้นี้ไม่ได้ตั้ง PIN ไว้ และคุณไม่ได้เป็นเจ้าของกระทู้" }, // Error message

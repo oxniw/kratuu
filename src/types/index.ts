@@ -6,6 +6,7 @@
 export interface Thread {
   id: string;
   user_id?: string | null;
+  author_role?: "admin" | "user" | "dev" | string;
   title: string;
   content: string;
   author_name: string;
@@ -24,6 +25,7 @@ export interface Thread {
 export interface CommentItem {
   id: string;
   user_id?: string | null;
+  author_role?: "admin" | "user" | "dev" | string;
   thread_id: string;
   parent_id?: string | null;
   content: string;

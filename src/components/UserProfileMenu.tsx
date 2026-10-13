@@ -7,21 +7,24 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { useAuth } from "@/hooks/useAuth";
-import { User, LogOut, LogIn, Bookmark, FileText, ChevronDown, Shield } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth"; // Import authentication hook
+import { getRoleBadgeInfo, VALID_ROLES, Role } from "@/lib/auth/roles"; // Import role helpers and types
+import { User, LogOut, LogIn, Bookmark, FileText, ChevronDown, Shield } from "lucide-react"; // Import UI icons
 
-interface UserProfileMenuProps {
-  onOpenAuth: () => void;
-  onOpenDrawer: () => void;
-}
+interface UserProfileMenuProps { // Component props interface
+  onOpenAuth: () => void; // Trigger auth modal
+  onOpenDrawer: () => void; // Trigger bookmarks drawer
+} // End UserProfileMenuProps
 
-export default function UserProfileMenu({
-  onOpenAuth,
-  onOpenDrawer,
+export default function UserProfileMenu({ // Main UserProfileMenu component
+  onOpenAuth, // Auth trigger
+  onOpenDrawer, // Drawer trigger
 }: UserProfileMenuProps) {
-  const { user, logout, loading } = useAuth();
-  const [isOpen, setIsOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const { user, logout, loading, refreshUser } = useAuth(); // Destructure auth utilities
+  const [isOpen, setIsOpen] = useState(false); // Track dropdown visibility
+  const [switchingRole, setSwitchingRole] = useState(false); // Loading state for role switch
+  const [roleMsg, setRoleMsg] = useState(""); // Feedback message for role change
+  const menuRef = useRef<HTMLDivElement>(null); // Reference to dropdown menu container
 
   // Close dropdown on outside click or Escape key
   useEffect(() => {
@@ -69,16 +72,41 @@ export default function UserProfileMenu({
   }
 
   // Authenticated State: Avatar badge with interactive menu
-  const initialLetter = (user.display_name || user.username || "U").charAt(0).toUpperCase();
+  const initialLetter = (user.display_name || user.username || "U").charAt(0).toUpperCase(); // Extract initial
+  const badge = getRoleBadgeInfo(user.role); // Resolve role badge metadata
 
-  const formatJoinDate = (timestamp: number) => {
-    const d = new Date(timestamp);
-    const months = [
+  const handleRoleChange = async (targetRole: Role) => { // Trigger role transition via API
+    if (user.role === targetRole || switchingRole) return; // Prevent redundant requests
+    try { // Begin request try block
+      setSwitchingRole(true); // Turn on loading state
+      setRoleMsg(""); // Clear previous feedback
+      const res = await fetch("/api/auth/role", { // Call role management API
+        method: "POST", // HTTP method
+        headers: { "Content-Type": "application/json" }, // JSON headers
+        body: JSON.stringify({ role: targetRole }), // Send target role payload
+      }); // End fetch
+      const data = await res.json(); // Parse response JSON
+      if (res.ok) { // Check if request succeeded
+        await refreshUser(); // Re-fetch current user profile from server
+        setRoleMsg(`สลับเป็น ${targetRole.toUpperCase()} สำเร็จ`); // Success message
+      } else { // Handle server-side error
+        setRoleMsg(data.error || "เปลี่ยนสิทธิ์ไม่สำเร็จ"); // Error message
+      } // End if-else
+    } catch { // Catch network failure
+      setRoleMsg("เชื่อมต่อไม่สำเร็จ"); // Connection error
+    } finally { // Finalize execution
+      setSwitchingRole(false); // Turn off loading state
+    } // End finally
+  }; // End handleRoleChange
+
+  const formatJoinDate = (timestamp: number) => { // Format join date
+    const d = new Date(timestamp); // Date instance
+    const months = [ // Thai month abbreviations
       "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
       "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."
     ];
-    return `${months[d.getMonth()]} ${d.getFullYear() + 543}`;
-  };
+    return `${months[d.getMonth()]} ${d.getFullYear() + 543}`; // Thai Buddhist era string
+  }; // End formatJoinDate
 
   return (
     <div className="relative font-mono" ref={menuRef}>
@@ -103,6 +131,11 @@ export default function UserProfileMenu({
           {user.display_name}
         </span>
 
+        {/* Role mini tag */}
+        <span className={badge.className}>
+          {badge.label}
+        </span>
+
         <ChevronDown className={`w-3 h-3 transition-transform ${isOpen ? "rotate-180" : ""}`} />
       </button>
 
@@ -115,8 +148,8 @@ export default function UserProfileMenu({
               <span className="font-bold text-sm truncate" title={user.display_name}>
                 {user.display_name}
               </span>
-              <span className="text-[10px] px-1.5 py-0.2 border border-black dark:border-white font-semibold">
-                {user.role === "admin" ? "ADMIN" : "MEMBER"}
+              <span className={badge.className} title={badge.description}>
+                {badge.tag}
               </span>
             </div>
             <div className="text-xs text-neutral-500 truncate">
@@ -125,6 +158,43 @@ export default function UserProfileMenu({
             <div className="text-[11px] text-neutral-400 pt-1">
               สมาชิกตั้งแต่ {formatJoinDate(user.created_at)}
             </div>
+          </div>
+
+          {/* Role System Section */}
+          <div className="p-3 border-b border-black dark:border-white space-y-1.5 bg-neutral-100 dark:bg-neutral-900">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="font-bold flex items-center gap-1">
+                <Shield className="w-3 h-3" />
+                <span>ระดับสิทธิ์ (Role)</span>
+              </span>
+              <span className={badge.className}>{badge.tag}</span>
+            </div>
+            <p className="text-[10px] text-neutral-600 dark:text-neutral-400">
+              {badge.description}
+            </p>
+            <div className="pt-1 flex items-center gap-1">
+              {VALID_ROLES.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  disabled={switchingRole || user.role === r}
+                  onClick={() => handleRoleChange(r)}
+                  className={`flex-1 py-1 text-[10px] font-mono uppercase font-bold border transition-colors cursor-pointer ${
+                    user.role === r
+                      ? "bg-black text-white dark:bg-white dark:text-black border-black dark:border-white shadow-sm"
+                      : "border-neutral-300 dark:border-neutral-700 hover:border-black dark:hover:border-white hover:bg-white dark:hover:bg-black opacity-80"
+                  }`}
+                  title={`สลับบทบาทเป็น ${r.toUpperCase()}`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+            {roleMsg && (
+              <p className="text-[10px] text-neutral-600 dark:text-neutral-400 font-mono pt-0.5">
+                {roleMsg}
+              </p>
+            )}
           </div>
 
           {/* Menu Items */}

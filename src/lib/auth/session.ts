@@ -7,6 +7,7 @@ import crypto from "crypto"; // Import Node crypto module for session token gene
 import { cookies } from "next/headers"; // Import Next.js headers cookies helper
 import { getDb } from "@/lib/db"; // Import MongoDB database accessor
 import { SafeUser } from "./types"; // Import SafeUser interface
+import { isValidRole } from "./roles"; // Import isValidRole helper
 
 export const SESSION_COOKIE_NAME = "kratuu_session"; // Session cookie key name
 const SESSION_DURATION_MS = 14 * 24 * 60 * 60 * 1000; // 14 days session duration in milliseconds
@@ -71,7 +72,7 @@ export async function getCurrentUser(): Promise<SafeUser | null> { // Resolves u
       username: String(user.username), // User handle
       display_name: String(user.display_name), // Display name
       email: user.email ? String(user.email) : undefined, // Email address
-      role: String(user.role || "user"), // Account role
+      role: isValidRole(user.role) ? user.role : "user", // Validated account role
       created_at: Number(user.created_at), // Creation timestamp
     }; // End return
   } catch (err) { // Catch unexpected errors

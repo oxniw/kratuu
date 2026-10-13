@@ -16,7 +16,8 @@ import { Thread, CommentItem } from "@/types"; // Import Thread and CommentItem 
 import { addRecentView, toggleBookmark, isBookmarked, getStoredHandle, setStoredHandle } from "@/lib/storage"; // Import storage utilities
 import { useAuth } from "@/hooks/useAuth"; // Import authentication hook
 import { useAuthGuard } from "@/hooks/useAuthGuard"; // Import authentication guard hook
-import { ArrowLeft, Bookmark, ChevronUp, ChevronDown, MessageSquare, Reply, Eye, Clock, ShieldCheck, Lock, RefreshCw } from "lucide-react"; // Import UI icons
+import { getRoleBadgeInfo, canModerate } from "@/lib/auth/roles"; // Import role badge metadata and moderator predicate
+import { ArrowLeft, Bookmark, ChevronUp, ChevronDown, MessageSquare, Reply, Eye, Clock, ShieldCheck, Shield, Lock, RefreshCw } from "lucide-react"; // Import UI icons
 
 export default function ThreadDetailPage({ // Define ThreadDetailPage component
   params, // Dynamic parameters
@@ -61,6 +62,30 @@ export default function ThreadDetailPage({ // Define ThreadDetailPage component
     } // End window check
     router.push("/?category=Board"); // Default fallback to main Board feed
   }; // End handleGoBack
+
+  const isModerator = canModerate(user?.role); // Compute if user holds admin or dev role
+  const threadAuthorBadge = (thread?.author_role === "admin" || thread?.author_role === "dev") ? getRoleBadgeInfo(thread.author_role) : null; // Author role badge
+  const [modDeleting, setModDeleting] = useState(false); // Moderator deletion loading indicator
+
+  const handleModDeleteThread = async () => { // Moderator thread deletion action
+    if (!confirm("คุณต้องการลบกระทู้นี้ในฐานะผู้ดูแลระบบ/ผู้พัฒนา (Moderator) ใช่หรือไม่?")) return; // Confirm action
+    try { // Begin deletion
+      setModDeleting(true); // Loading on
+      const res = await fetch(`/api/threads/${id}`, { // Call DELETE endpoint
+        method: "DELETE", // HTTP DELETE method
+        headers: { "Content-Type": "application/json" }, // JSON headers
+      }); // End fetch
+      if (res.ok) { // Check success
+        handleGoBack(); // Return to previous board feed
+      } else { // Handle failure
+        alert("ไม่สามารถลบกระทู้ได้"); // Alert error
+      } // End if-else
+    } catch { // Catch network error
+      alert("เกิดข้อผิดพลาดในการเชื่อมต่อ"); // Alert connection failure
+    } finally { // Finalize
+      setModDeleting(false); // Loading off
+    } // End finally
+  }; // End handleModDeleteThread
 
   const fetchThreadData = async () => {
     try {
@@ -316,7 +341,14 @@ export default function ThreadDetailPage({ // Define ThreadDetailPage component
                   <span className="border border-black dark:border-white px-2 py-0.5 font-bold uppercase">
                     {thread.category}
                   </span>
-                  <span>โดย {thread.author_name}</span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span>โดย {thread.author_name}</span>
+                    {threadAuthorBadge && (
+                      <span className={threadAuthorBadge.className} title={threadAuthorBadge.description}>
+                        {threadAuthorBadge.tag}
+                      </span>
+                    )}
+                  </span>
                 </div>
                 <div className="flex items-center gap-3 text-neutral-500">
                   <span className="flex items-center gap-1">
@@ -385,6 +417,19 @@ export default function ThreadDetailPage({ // Define ThreadDetailPage component
                     <Bookmark className="w-3.5 h-3.5" />
                     <span>{bookmarked ? "บันทึกแล้ว" : "บันทึกกระทู้"}</span>
                   </button>
+
+                  {isModerator && (
+                    <button
+                      type="button"
+                      disabled={modDeleting}
+                      onClick={handleModDeleteThread}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-black dark:border-white text-xs font-mono font-bold text-neutral-600 hover:text-black dark:text-neutral-400 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors cursor-pointer"
+                      title="ลบกระทู้ในฐานะผู้ดูแล/ผู้พัฒนา"
+                    >
+                      <Shield className="w-3.5 h-3.5" />
+                      <span>{modDeleting ? "กำลังลบ..." : "[MOD ลบกระทู้]"}</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </article>
@@ -459,7 +504,14 @@ export default function ThreadDetailPage({ // Define ThreadDetailPage component
                             ความคิดเห็นที่ {index + 1}
                           </span>
                           <span>•</span>
-                          <span>{comment.author_name}</span>
+                          <span className="inline-flex items-center gap-1">
+                            <span>{comment.author_name}</span>
+                            {(comment.author_role === "admin" || comment.author_role === "dev") && (
+                              <span className={getRoleBadgeInfo(comment.author_role).className} title={getRoleBadgeInfo(comment.author_role).description}>
+                                {getRoleBadgeInfo(comment.author_role).tag}
+                              </span>
+                            )}
+                          </span>
                         </div>
                         <span>{formatTime(comment.created_at)}</span>
                       </div>
@@ -528,8 +580,13 @@ export default function ThreadDetailPage({ // Define ThreadDetailPage component
                               className="p-3 border border-neutral-300 dark:border-neutral-700 bg-neutral-50/50 dark:bg-neutral-950/50 text-xs font-mono space-y-1.5"
                             >
                               <div className="flex justify-between text-neutral-500 text-[11px]">
-                                <span className="font-semibold text-black dark:text-white">
-                                  ความคิดเห็นย่อย {index + 1}-{sIdx + 1} • {sub.author_name}
+                                <span className="font-semibold text-black dark:text-white inline-flex items-center gap-1">
+                                  <span>ความคิดเห็นย่อย {index + 1}-{sIdx + 1} • {sub.author_name}</span>
+                                  {(sub.author_role === "admin" || sub.author_role === "dev") && (
+                                    <span className={getRoleBadgeInfo(sub.author_role).className} title={getRoleBadgeInfo(sub.author_role).description}>
+                                      {getRoleBadgeInfo(sub.author_role).tag}
+                                    </span>
+                                  )}
                                 </span>
                                 <span>{formatTime(sub.created_at)}</span>
                               </div>

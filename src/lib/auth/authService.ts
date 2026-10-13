@@ -8,6 +8,7 @@ import { getDb } from "@/lib/db"; // Import MongoDB database accessor
 import { hashPassword, verifyPassword } from "./password"; // Import password hashing utilities
 import { createSession, clearSession, getCurrentUser } from "./session"; // Import session management functions
 import { AuthResult, SafeUser } from "./types"; // Import auth result and user types
+import { isValidRole } from "./roles"; // Import role validator
 import { verifyRealEmail } from "./emailValidator"; // Import real email DNS verifier
 
 const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,20}$/; // Standard alphanumeric username pattern
@@ -160,7 +161,7 @@ export async function loginUser( // Authenticates user via username/email and pa
     username: String(user.username),
     display_name: String(user.display_name),
     email: user.email ? String(user.email) : undefined,
-    role: String(user.role || "user"),
+    role: isValidRole(user.role) ? user.role : "user", // Validated role attribute
     created_at: Number(user.created_at),
   };
 

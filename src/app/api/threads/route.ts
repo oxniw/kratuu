@@ -105,6 +105,7 @@ export async function GET(req: NextRequest) { // Handles querying threads with f
     const threads: Thread[] = rawThreads.map((row) => ({ // Map MongoDB documents to Thread interface
       id: String(row.id), // Thread unique identifier
       user_id: row.user_id ? String(row.user_id) : null, // Author user ID
+      author_role: row.author_role ? String(row.author_role) : undefined, // Author role: user, admin, dev
       title: String(row.title), // Title string
       content: String(row.content), // Body content
       author_name: String(row.author_name), // Author display name
@@ -172,6 +173,7 @@ export async function POST(req: NextRequest) { // Handles creating a new thread 
     await db.collection("threads").insertOne({ // Insert new thread document into MongoDB
       id, // Unique ID
       user_id: userId, // User identifier
+      author_role: sessionUser.role || "user", // Author system role: admin, user, dev
       title: title.trim(), // Sanitized title
       content: content.trim(), // Sanitized content
       author_name: author, // Author display name
