@@ -111,7 +111,7 @@ export default function Header({ onOpenDrawer = () => {}, hideNewThreadButton = 
                 title="สร้างกระทู้ใหม่"
               >
                 <PenLine className="w-4 h-4" />
-                <span className="hidden sm:inline">สร้างกระทู้</span>
+                <span className="text-xs sm:text-sm">สร้างกระทู้</span> {/* Text label for create thread button */}
               </Link>
             )}
 
