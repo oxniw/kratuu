@@ -15,11 +15,13 @@ import BookmarksDrawer from "@/components/BookmarksDrawer"; // Import bookmarks 
 import DirectoryLanding from "@/components/DirectoryLanding"; // Import 4chan-styled directory landing component
 import { Thread } from "@/types"; // Import Thread TypeScript interface
 import { findBoard } from "@/lib/categories"; // Import category lookup helper
-import { RefreshCw, ArrowLeft, LayoutGrid } from "lucide-react"; // Import UI icons
+import { RefreshCw, ArrowLeft, LayoutGrid, PenLine } from "lucide-react"; // Import UI icons
+import { useAuthGuard } from "@/hooks/useAuthGuard"; // Import authentication guard hook
 
 function HomeContent() { // Inner content component wrapped in Suspense for useSearchParams
   const router = useRouter(); // Initialize router instance for navigation
   const searchParams = useSearchParams(); // Read URL search query parameters
+  const { requireAuth } = useAuthGuard(); // Extract authentication guard trigger
   const categoryParam = searchParams.get("category"); // Extract active category filter parameter
   const [threads, setThreads] = useState<Thread[]>([]); // Store list of fetched threads
   const [loading, setLoading] = useState(true); // Track loading indicator state
@@ -67,6 +69,11 @@ function HomeContent() { // Inner content component wrapped in Suspense for useS
       router.push("/"); // Navigate to root landing page
     } // End fallback
   }; // End handleGoBack
+
+  const handleNewThreadClick = () => { // Handles create thread click with auth guard
+    const targetUrl = categoryParam ? `/new?category=${encodeURIComponent(categoryParam)}` : "/new"; // Target compose URL with preselected board
+    requireAuth(() => router.push(targetUrl), "สร้างกระทู้ใหม่"); // Require authentication before navigating
+  }; // End handleNewThreadClick
 
   const fetchThreads = useCallback(async () => { // Fetch threads from backend API with active filters
     if (!isBoardView) return; // Do not fetch threads if on directory landing view
@@ -144,20 +151,31 @@ function HomeContent() { // Inner content component wrapped in Suspense for useS
               </div>
             </div>
 
-            {/* Editorial Sub-banner (Old Landing Page Header without new thread button) */}
-            <section className="border border-black dark:border-white p-6 sm:p-8 bg-white dark:bg-black">
-              <div>
+            {/* Editorial Sub-banner with New Thread Action */}
+            <section className="border border-black dark:border-white p-6 sm:p-8 bg-white dark:bg-black flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+              <div> {/* Left container holding titles and description */}
                 <p className="text-xs font-mono uppercase tracking-widest text-neutral-500 dark:text-neutral-400 mb-1">
-                  {bannerTagline}
-                </p>
+                  {bannerTagline} {/* Display board group category and localized name */}
+                </p> {/* End tagline paragraph */}
                 <h1 className="text-2xl sm:text-4xl font-black font-mono tracking-tight uppercase">
-                  {bannerTitle}
-                </h1>
+                  {bannerTitle} {/* Display board English title header */}
+                </h1> {/* End title header */}
                 <p className="text-sm font-sans mt-2 max-w-lg text-neutral-700 dark:text-neutral-300">
-                  {bannerDescription}
-                </p>
-              </div>
-            </section>
+                  {bannerDescription} {/* Display board description */}
+                </p> {/* End description paragraph */}
+              </div> {/* End left container */}
+              <div className="shrink-0"> {/* Right container holding action button */}
+                <button
+                  type="button"
+                  onClick={handleNewThreadClick}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-black text-white dark:bg-white dark:text-black border border-black dark:border-white hover:opacity-85 transition-opacity text-sm font-mono font-medium cursor-pointer"
+                  title="สร้างกระทู้ใหม่"
+                >
+                  <PenLine className="w-4 h-4" /> {/* Action icon */}
+                  <span>สร้างกระทู้</span> {/* Action button label */}
+                </button> {/* End create thread button */}
+              </div> {/* End right container */}
+            </section> {/* End editorial sub-banner */}
 
             {/* Filter & Search Bar */}
             <FilterBar
