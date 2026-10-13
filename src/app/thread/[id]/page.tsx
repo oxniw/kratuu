@@ -16,7 +16,7 @@ import { Thread, CommentItem } from "@/types"; // Import Thread and CommentItem 
 import { addRecentView, toggleBookmark, isBookmarked, getStoredHandle, setStoredHandle } from "@/lib/storage"; // Import storage utilities
 import { useAuth } from "@/hooks/useAuth"; // Import authentication hook
 import { useAuthGuard } from "@/hooks/useAuthGuard"; // Import authentication guard hook
-import { ArrowLeft, Bookmark, ChevronUp, ChevronDown, MessageSquare, Trash2, Reply, Eye, Clock, ShieldCheck, Lock, RefreshCw } from "lucide-react"; // Import UI icons
+import { ArrowLeft, Bookmark, ChevronUp, ChevronDown, MessageSquare, Reply, Eye, Clock, ShieldCheck, Lock, RefreshCw } from "lucide-react"; // Import UI icons
 
 export default function ThreadDetailPage({ // Define ThreadDetailPage component
   params, // Dynamic parameters
@@ -46,12 +46,6 @@ export default function ThreadDetailPage({ // Define ThreadDetailPage component
   const [replyPin, setReplyPin] = useState("");
   const [replyingToId, setReplyingToId] = useState<string | null>(null);
   const [submittingReply, setSubmittingReply] = useState(false);
-
-  // Delete modal state
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deletePin, setDeletePin] = useState("");
-  const [deleteError, setDeleteError] = useState("");
-  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleGoBack = () => { // Navigates back to the exact previous feed or board page where user arrived from
     if (typeof window !== "undefined") { // Check window environment
@@ -219,39 +213,6 @@ export default function ThreadDetailPage({ // Define ThreadDetailPage component
         setSubmittingReply(false);
       }
     }, parentId ? "ส่งคำตอบ" : "ตอบกระทู้");
-  };
-
-  const isOwner = Boolean(user && thread?.user_id && user.id === thread.user_id);
-
-  const handleDeleteThread = async () => {
-    if (!isOwner && !deletePin.trim()) {
-      setDeleteError("กรุณากรอก PIN");
-      return;
-    }
-    setIsDeleting(true);
-    setDeleteError("");
-
-    try {
-      const res = await fetch(`/api/threads/${id}`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin: isOwner ? "" : deletePin }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "ไม่สามารถลบกระทู้ได้");
-      }
-
-      router.push("/");
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        setDeleteError(err.message);
-      } else {
-        setDeleteError("เกิดข้อผิดพลาดในการลบกระทู้");
-      }
-      setIsDeleting(false);
-    }
   };
 
   const formatTime = (ms: number) => { // Format timestamp into relative Thai time
@@ -424,14 +385,6 @@ export default function ThreadDetailPage({ // Define ThreadDetailPage component
                     <Bookmark className="w-3.5 h-3.5" />
                     <span>{bookmarked ? "บันทึกแล้ว" : "บันทึกกระทู้"}</span>
                   </button>
-
-                  <button
-                    onClick={() => setShowDeleteModal(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 border border-black dark:border-white text-neutral-600 hover:text-black dark:text-neutral-400 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>ลบกระทู้</span>
-                  </button>
                 </div>
               </div>
             </article>
@@ -595,59 +548,6 @@ export default function ThreadDetailPage({ // Define ThreadDetailPage component
           </div>
         )}
 
-        {/* Delete PIN Modal */}
-        {showDeleteModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px] p-4">
-            <div className="w-full max-w-sm border border-black dark:border-white bg-white dark:bg-black p-6 font-mono space-y-4 shadow-2xl">
-              <h3 className="font-bold text-base">ยืนยันการลบกระทู้</h3>
-              {isOwner ? (
-                <p className="text-xs text-neutral-600 dark:text-neutral-400">
-                  คุณเป็นเจ้าของกระทู้นี้ (โพสต์โดย @{user?.username}) คุณต้องการลบกระทู้นี้ออกจากระบบใช่หรือไม่?
-                </p>
-              ) : (
-                <>
-                  <p className="text-xs text-neutral-600 dark:text-neutral-400">
-                    กรุณาระบุรหัส PIN 4 หลักที่คุณตั้งไว้ตอนสร้างกระทู้ เพื่อลบกระทู้นี้
-                  </p>
-                  <input
-                    type="password"
-                    maxLength={6}
-                    value={deletePin}
-                    onChange={(e) => setDeletePin(e.target.value)}
-                    placeholder="PIN 4 หลัก"
-                    className="w-full px-3 py-2 border border-black dark:border-white bg-transparent text-sm focus:outline-none"
-                  />
-                </>
-              )}
-
-              {deleteError && (
-                <div className="p-2 border border-black dark:border-white bg-black text-white dark:bg-white dark:text-black text-xs">
-                  {deleteError}
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2 text-xs">
-                <button
-                  onClick={() => {
-                    setShowDeleteModal(false);
-                    setDeleteError("");
-                    setDeletePin("");
-                  }}
-                  className="px-4 py-2 border border-black dark:border-white hover:bg-neutral-100 dark:hover:bg-neutral-900"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  onClick={handleDeleteThread}
-                  disabled={isDeleting}
-                  className="px-4 py-2 bg-black text-white dark:bg-white dark:text-black border border-black dark:border-white font-bold hover:opacity-85"
-                >
-                  {isDeleting ? "กำลังลบ..." : "ยืนยันลบ"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </main>
     </div>
   );
